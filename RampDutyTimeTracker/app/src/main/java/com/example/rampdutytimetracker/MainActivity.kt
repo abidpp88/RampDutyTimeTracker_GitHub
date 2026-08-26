@@ -4,10 +4,13 @@ import android.app.TimePickerDialog
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -101,14 +104,19 @@ fun RampDutyApp() {
     fun edit(index: Int) {
 
         val calendar = Calendar.getInstance()
-
         val existing = stamps[index].time
 
         if (existing != null) {
             try {
                 val parts = existing.split(":")
-                calendar.set(Calendar.HOUR_OF_DAY, parts[0].toInt())
-                calendar.set(Calendar.MINUTE, parts[1].toInt())
+                calendar.set(
+                    Calendar.HOUR_OF_DAY,
+                    parts[0].toInt()
+                )
+                calendar.set(
+                    Calendar.MINUTE,
+                    parts[1].toInt()
+                )
             } catch (_: Exception) {
             }
         }
@@ -118,10 +126,14 @@ fun RampDutyApp() {
             { _, hour, minute ->
 
                 val second =
-                    if (existing != null && existing.split(":").size == 3)
+                    if (
+                        existing != null &&
+                        existing.split(":").size == 3
+                    ) {
                         existing.split(":")[2].toInt()
-                    else
+                    } else {
                         0
+                    }
 
                 val newTime = String.format(
                     Locale.getDefault(),
@@ -150,7 +162,10 @@ fun RampDutyApp() {
         return try {
 
             val fmt =
-                SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                SimpleDateFormat(
+                    "HH:mm:ss",
+                    Locale.getDefault()
+                )
 
             val start = fmt.parse(first)!!.time
             var end = fmt.parse(last)!!.time
@@ -185,10 +200,12 @@ fun RampDutyApp() {
             )
 
         val oldData =
-            prefs.getString("flights", "[]") ?: "[]"
+            prefs.getString(
+                "flights",
+                "[]"
+            ) ?: "[]"
 
         val array = JSONArray(oldData)
-
         val obj = JSONObject()
 
         obj.put("flightNo", flightNo)
@@ -276,409 +293,469 @@ fun RampDutyApp() {
         return list.reversed()
     }
 
+    BackHandler(enabled = showHistory) {
+        showHistory = false
+    }
+
     MaterialTheme {
-
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "Ramp Duty Time Tracker"
-                        )
-                    }
-                )
-            }
-        ) { pad ->
-
-            LazyColumn(
-                modifier =
-                    Modifier
-                        .padding(pad)
-                        .padding(16.dp),
-                verticalArrangement =
-                    Arrangement.spacedBy(10.dp)
-            ) {
-
-                item {
-
-                    if (!started) {
-
-                        OutlinedTextField(
-                            value = flightNo,
-                            onValueChange = {
-                                flightNo = it
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            label = {
-                                Text("Flight Number")
-                            }
-                        )
-
-                        Spacer(
-                            Modifier.height(8.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = registration,
-                            onValueChange = {
-                                registration = it
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            label = {
-                                Text(
-                                    "Aircraft Registration"
-                                )
-                            }
-                        )
-
-                        Spacer(
-                            Modifier.height(8.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = aircraft,
-                            onValueChange = {
-                                aircraft = it
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            label = {
-                                Text("Aircraft Type")
-                            }
-                        )
-
-                        Spacer(
-                            Modifier.height(8.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = stand,
-                            onValueChange = {
-                                stand = it
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            label = {
-                                Text("Stand")
-                            }
-                        )
-
-                        Spacer(
-                            Modifier.height(12.dp)
-                        )
-
-                        Button(
-                            onClick = {
-                                started = true
-                            },
-                            enabled =
-                                flightNo.isNotBlank() &&
-                                registration.isNotBlank() &&
-                                aircraft.isNotBlank() &&
-                                stand.isNotBlank(),
-                            modifier =
-                                Modifier.fillMaxWidth()
-                        ) {
-                            Text("START FLIGHT")
-                        }
-
-                    } else {
-
-                        Text(
-                            "$flightNo • $registration • $aircraft • Stand $stand",
-                            style =
-                                MaterialTheme
-                                    .typography
-                                    .titleMedium
-                        )
-                    }
-                }
-
-                if (started) {
-
-                    itemsIndexed(stamps) {
-                            index,
-                            stamp ->
-
-                        Card(
-                            modifier =
-                                Modifier.fillMaxWidth()
-                        ) {
-
-                            Column(
-                                modifier =
-                                    Modifier.padding(
-                                        12.dp
-                                    )
-                            ) {
-
-                                Text(
-                                    if (
-                                        stamp.time == null
-                                    )
-                                        stamp.name
-                                    else
-                                        "${stamp.name} • ${stamp.time}",
-                                    style =
-                                        MaterialTheme
-                                            .typography
-                                            .titleMedium
-                                )
-
-                                Spacer(
-                                    Modifier.height(8.dp)
-                                )
-
-                                if (
-                                    stamp.time == null
-                                ) {
-
-                                    Button(
-                                        onClick = {
-                                            record(index)
-                                        },
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            "RECORD TIME"
-                                        )
-                                    }
-
-                                } else {
-
-                                    Row(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth(),
-                                        horizontalArrangement =
-                                            Arrangement
-                                                .spacedBy(
-                                                    8.dp
-                                                )
-                                    ) {
-
-                                        OutlinedButton(
-                                            onClick = {
-                                                edit(index)
-                                            },
-                                            modifier =
-                                                Modifier
-                                                    .weight(1f)
-                                        ) {
-                                            Text("EDIT")
-                                        }
-
-                                        OutlinedButton(
-                                            onClick = {
-                                                reset(index)
-                                            },
-                                            modifier =
-                                                Modifier
-                                                    .weight(1f)
-                                        ) {
-                                            Text("RESET")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-
-                        Spacer(
-                            Modifier.height(10.dp)
-                        )
-
-                        Text(
-                            "Automatic Timings",
-                            style =
-                                MaterialTheme
-                                    .typography
-                                    .titleLarge
-                        )
-
-                        Spacer(
-                            Modifier.height(8.dp)
-                        )
-
-                        val onBlock =
-                            stamps.first {
-                                it.name ==
-                                    "On Block"
-                            }.time
-
-                        val offBlock =
-                            stamps.first {
-                                it.name ==
-                                    "Off Block"
-                            }.time
-
-                        val byFirst =
-                            stamps.first {
-                                it.name ==
-                                    "BY First Baggage"
-                            }.time
-
-                        val byLast =
-                            stamps.first {
-                                it.name ==
-                                    "BY Last Baggage"
-                            }.time
-
-                        val btFirst =
-                            stamps.first {
-                                it.name ==
-                                    "BT First Baggage"
-                            }.time
-
-                        val btLast =
-                            stamps.first {
-                                it.name ==
-                                    "BT Last Baggage"
-                            }.time
-
-                        Text(
-                            "Turnaround: ${
-                                formatDuration(
-                                    secondsBetween(
-                                        onBlock,
-                                        offBlock
-                                    )
-                                )
-                            }"
-                        )
-
-                        Text(
-                            "Local (BY) delivery: ${
-                                formatDuration(
-                                    secondsBetween(
-                                        byFirst,
-                                        byLast
-                                    )
-                                )
-                            }"
-                        )
-
-                        Text(
-                            "Transfer (BT) delivery: ${
-                                formatDuration(
-                                    secondsBetween(
-                                        btFirst,
-                                        btLast
-                                    )
-                                )
-                            }"
-                        )
-
-                        Spacer(
-                            Modifier.height(12.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = notes,
-                            onValueChange = {
-                                notes = it
-                            },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(120.dp),
-                            label = {
-                                Text("Notes")
-                            }
-                        )
-
-                        Spacer(
-                            Modifier.height(12.dp)
-                        )
-
-                        Button(
-                            onClick = {
-                                saveFlight()
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth()
-                        ) {
-                            Text("SAVE FLIGHT")
-                        }
-
-                        Spacer(
-                            Modifier.height(8.dp)
-                        )
-
-                        OutlinedButton(
-                            onClick = {
-                                showHistory = true
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth()
-                        ) {
-                            Text("VIEW HISTORY")
-                        }
-                    }
-                }
-            }
-        }
 
         if (showHistory) {
 
             val history = loadHistory()
 
-            AlertDialog(
-                onDismissRequest = {
-                    showHistory = false
-                },
-                title = {
-                    Text("Flight History")
-                },
-                text = {
-
-                    if (history.isEmpty()) {
-
-                        Text(
-                            "No saved flights yet."
-                        )
-
-                    } else {
-
-                        LazyColumn {
-
-                            itemsIndexed(history) {
-                                    _,
-                                    flight ->
-
-                                Text(
-                                    "${flight.flightNo} • ${flight.registration}\n" +
-                                    "${flight.aircraft} • Stand ${flight.stand}\n" +
-                                    flight.date
-                                )
-
-                                HorizontalDivider()
-
-                                Spacer(
-                                    Modifier.height(
-                                        8.dp
-                                    )
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Text("Flight History")
+                        },
+                        navigationIcon = {
+                            IconButton(
+                                onClick = {
+                                    showHistory = false
+                                }
+                            ) {
+                                Icon(
+                                    imageVector =
+                                        Icons.Default.ArrowBack,
+                                    contentDescription =
+                                        "Back"
                                 )
                             }
                         }
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showHistory = false
-                        }
+                    )
+                }
+            ) { padding ->
+
+                if (history.isEmpty()) {
+
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(padding)
+                                .padding(16.dp)
                     ) {
-                        Text("CLOSE")
+                        Text(
+                            "No saved flights yet."
+                        )
+                    }
+
+                } else {
+
+                    LazyColumn(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(padding)
+                                .padding(16.dp),
+                        verticalArrangement =
+                            Arrangement.spacedBy(10.dp)
+                    ) {
+
+                        itemsIndexed(history) {
+                                _,
+                                flight ->
+
+                            Card(
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+
+                                Column(
+                                    modifier =
+                                        Modifier.padding(16.dp)
+                                ) {
+
+                                    Text(
+                                        flight.flightNo,
+                                        style =
+                                            MaterialTheme
+                                                .typography
+                                                .titleLarge
+                                    )
+
+                                    Spacer(
+                                        Modifier.height(4.dp)
+                                    )
+
+                                    Text(
+                                        "Registration: ${flight.registration}"
+                                    )
+
+                                    Text(
+                                        "Aircraft: ${flight.aircraft}"
+                                    )
+
+                                    Text(
+                                        "Stand: ${flight.stand}"
+                                    )
+
+                                    Text(
+                                        "Date: ${flight.date}"
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-            )
+            }
+
+        } else {
+
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                "Ramp Duty Time Tracker"
+                            )
+                        },
+                        actions = {
+
+                            TextButton(
+                                onClick = {
+                                    showHistory = true
+                                }
+                            ) {
+                                Text("HISTORY")
+                            }
+                        }
+                    )
+                }
+            ) { pad ->
+
+                LazyColumn(
+                    modifier =
+                        Modifier
+                            .padding(pad)
+                            .padding(16.dp),
+                    verticalArrangement =
+                        Arrangement.spacedBy(10.dp)
+                ) {
+
+                    item {
+
+                        if (!started) {
+
+                            OutlinedTextField(
+                                value = flightNo,
+                                onValueChange = {
+                                    flightNo = it
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                label = {
+                                    Text("Flight Number")
+                                }
+                            )
+
+                            Spacer(
+                                Modifier.height(8.dp)
+                            )
+
+                            OutlinedTextField(
+                                value = registration,
+                                onValueChange = {
+                                    registration = it
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                label = {
+                                    Text(
+                                        "Aircraft Registration"
+                                    )
+                                }
+                            )
+
+                            Spacer(
+                                Modifier.height(8.dp)
+                            )
+
+                            OutlinedTextField(
+                                value = aircraft,
+                                onValueChange = {
+                                    aircraft = it
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                label = {
+                                    Text("Aircraft Type")
+                                }
+                            )
+
+                            Spacer(
+                                Modifier.height(8.dp)
+                            )
+
+                            OutlinedTextField(
+                                value = stand,
+                                onValueChange = {
+                                    stand = it
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                label = {
+                                    Text("Stand")
+                                }
+                            )
+
+                            Spacer(
+                                Modifier.height(12.dp)
+                            )
+
+                            Button(
+                                onClick = {
+                                    started = true
+                                },
+                                enabled =
+                                    flightNo.isNotBlank() &&
+                                    registration.isNotBlank() &&
+                                    aircraft.isNotBlank() &&
+                                    stand.isNotBlank(),
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+                                Text("START FLIGHT")
+                            }
+
+                        } else {
+
+                            Text(
+                                "$flightNo • $registration • $aircraft • Stand $stand",
+                                style =
+                                    MaterialTheme
+                                        .typography
+                                        .titleMedium
+                            )
+                        }
+                    }
+
+                    if (started) {
+
+                        itemsIndexed(stamps) {
+                                index,
+                                stamp ->
+
+                            Card(
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+
+                                Column(
+                                    modifier =
+                                        Modifier.padding(12.dp)
+                                ) {
+
+                                    Text(
+                                        if (
+                                            stamp.time == null
+                                        ) {
+                                            stamp.name
+                                        } else {
+                                            "${stamp.name} • ${stamp.time}"
+                                        },
+                                        style =
+                                            MaterialTheme
+                                                .typography
+                                                .titleMedium
+                                    )
+
+                                    Spacer(
+                                        Modifier.height(8.dp)
+                                    )
+
+                                    if (
+                                        stamp.time == null
+                                    ) {
+
+                                        Button(
+                                            onClick = {
+                                                record(index)
+                                            },
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                "RECORD TIME"
+                                            )
+                                        }
+
+                                    } else {
+
+                                        Row(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth(),
+                                            horizontalArrangement =
+                                                Arrangement
+                                                    .spacedBy(
+                                                        8.dp
+                                                    )
+                                        ) {
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    edit(index)
+                                                },
+                                                modifier =
+                                                    Modifier
+                                                        .weight(1f)
+                                            ) {
+                                                Text("EDIT")
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    reset(index)
+                                                },
+                                                modifier =
+                                                    Modifier
+                                                        .weight(1f)
+                                            ) {
+                                                Text("RESET")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+
+                            Spacer(
+                                Modifier.height(10.dp)
+                            )
+
+                            Text(
+                                "Automatic Timings",
+                                style =
+                                    MaterialTheme
+                                        .typography
+                                        .titleLarge
+                            )
+
+                            Spacer(
+                                Modifier.height(8.dp)
+                            )
+
+                            val onBlock =
+                                stamps.first {
+                                    it.name == "On Block"
+                                }.time
+
+                            val offBlock =
+                                stamps.first {
+                                    it.name == "Off Block"
+                                }.time
+
+                            val byFirst =
+                                stamps.first {
+                                    it.name ==
+                                        "BY First Baggage"
+                                }.time
+
+                            val byLast =
+                                stamps.first {
+                                    it.name ==
+                                        "BY Last Baggage"
+                                }.time
+
+                            val btFirst =
+                                stamps.first {
+                                    it.name ==
+                                        "BT First Baggage"
+                                }.time
+
+                            val btLast =
+                                stamps.first {
+                                    it.name ==
+                                        "BT Last Baggage"
+                                }.time
+
+                            Text(
+                                "Turnaround: ${
+                                    formatDuration(
+                                        secondsBetween(
+                                            onBlock,
+                                            offBlock
+                                        )
+                                    )
+                                }"
+                            )
+
+                            Text(
+                                "Local (BY) delivery: ${
+                                    formatDuration(
+                                        secondsBetween(
+                                            byFirst,
+                                            byLast
+                                        )
+                                    )
+                                }"
+                            )
+
+                            Text(
+                                "Transfer (BT) delivery: ${
+                                    formatDuration(
+                                        secondsBetween(
+                                            btFirst,
+                                            btLast
+                                        )
+                                    )
+                                }"
+                            )
+
+                            Spacer(
+                                Modifier.height(12.dp)
+                            )
+
+                            OutlinedTextField(
+                                value = notes,
+                                onValueChange = {
+                                    notes = it
+                                },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(120.dp),
+                                label = {
+                                    Text("Notes")
+                                }
+                            )
+
+                            Spacer(
+                                Modifier.height(12.dp)
+                            )
+
+                            Button(
+                                onClick = {
+                                    saveFlight()
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+                                Text("SAVE FLIGHT")
+                            }
+
+                            Spacer(
+                                Modifier.height(8.dp)
+                            )
+
+                            OutlinedButton(
+                                onClick = {
+                                    showHistory = true
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+                                Text("VIEW HISTORY")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
