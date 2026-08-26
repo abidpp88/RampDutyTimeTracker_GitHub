@@ -1,6 +1,10 @@
 package com.example.rampdutytimetracker
  
 import android.app.TimePickerDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -34,7 +38,8 @@ data class SavedFlight(
     val stand: String,
     val date: String,
     val notes: String,
-    val timings: Map<String, String>
+    val timings: Map<String, String>,
+    val storageIndex: Int
 )
  
 class MainActivity : ComponentActivity() {
@@ -62,6 +67,12 @@ fun RampDutyApp() {
     var showHistory by remember { mutableStateOf(false) }
     var selectedFlight by remember { mutableStateOf<SavedFlight?>(null) }
  
+    var historySearch by remember { mutableStateOf("") }
+    var showMissingWarning by remember { mutableStateOf(false) }
+    var missingTimings by remember { mutableStateOf<List<String>>(emptyList()) }
+ 
+    var flightToDelete by remember { mutableStateOf<SavedFlight?>(null) }
+ 
     val names = listOf(
         "On Block",
         "Chocks On",
@@ -71,6 +82,18 @@ fun RampDutyApp() {
         "A/C Disconnected",
         "Step Connected",
         "Step Disconnected",
+        "BY First Baggage",
+        "BY Last Baggage",
+        "BT First Baggage",
+        "BT Last Baggage",
+        "Last Baggage Received",
+        "Door Closed",
+        "Off Block"
+    )
+ 
+    val importantTimingNames = setOf(
+        "On Block",
+        "Chocks On",
         "BY First Baggage",
         "BY Last Baggage",
         "BT First Baggage",
@@ -203,6 +226,105 @@ fun RampDutyApp() {
         return "$minutes min $remainingSeconds sec"
     }
  
+    fun buildFlightReport(flight: SavedFlight): String {
+ 
+        val onBlock = flight.timings["On Block"]
+        val offBlock = flight.timings["Off Block"]
+        val byFirst = flight.timings["BY First Baggage"]
+        val byLast = flight.timings["BY Last Baggage"]
+        val btFirst = flight.timings["BT First Baggage"]
+        val btLast = flight.timings["BT Last Baggage"]
+ 
+        return buildString {
+            appendLine("Ramp Duty Time Tracker")
+            appendLine()
+            appendLine("Flight: ${flight.flightNo}")
+            appendLine("Registration: ${flight.registration}")
+            appendLine("Aircraft: ${flight.aircraft}")
+            appendLine("Stand: ${flight.stand}")
+            appendLine("Date: ${flight.date}")
+            appendLine()
+            appendLine("Recorded Timings")
+            names.forEach { name ->
+                val time = flight.timings[name]
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "—"
+                appendLine("$name: $time")
+            }
+            appendLine()
+            appendLine(
+                "Turnaround: ${
+                    formatDuration(
+                        secondsBetween(onBlock, offBlock)
+                    )
+                }"
+            )
+            appendLine(
+                "Local (BY) delivery: ${
+                    formatDuration(
+                        secondsBetween(byFirst, byLast)
+                    )
+                }"
+            )
+            appendLine(
+                "Transfer (BT) delivery: ${
+                    formatDuration(
+                        secondsBetween(btFirst, btLast)
+                    )
+                }"
+            )
+            appendLine()
+            appendLine(
+                "Notes: ${
+                    flight.notes.takeIf { it.isNotBlank() }
+                        ?: "No notes"
+                }"
+            )
+        }
+    }
+ 
+    fun copyFlightReport(flight: SavedFlight) {
+        val clipboard =
+            context.getSystemService(
+                Context.CLIPBOARD_SERVICE
+            ) as ClipboardManager
+ 
+        val clip = ClipData.newPlainText(
+            "Flight Report",
+            buildFlightReport(flight)
+        )
+ 
+        clipboard.setPrimaryClip(clip)
+ 
+        Toast.makeText(
+            context,
+            "Flight details copied",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+ 
+    fun shareFlightReport(flight: SavedFlight) {
+ 
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(
+                Intent.EXTRA_SUBJECT,
+                "Flight Report - ${flight.flightNo}"
+            )
+            putExtra(
+                Intent.EXTRA_TEXT,
+                buildFlightReport(flight)
+            )
+        }
+ 
+        context.startActivity(
+            Intent.createChooser(
+                intent,
+                "Share Flight Report"
+            )
+        )
+    }
+ 
     fun saveFlight() {
  
         val prefs = context.getSharedPreferences(
@@ -300,12 +422,69 @@ fun RampDutyApp() {
                     stand = item.optString("stand"),
                     date = item.optString("date"),
                     notes = item.optString("notes"),
-                    timings = timingsMap
+                    timings = timingsMap,
+                    storageIndex = i
                 )
             )
         }
  
         return list.reversed()
+    }
+ 
+    fun deleteFlight(flight: SavedFlight) {
+ 
+        val prefs = context.getSharedPreferences(
+            "ramp_history",
+            0
+        )
+ 
+        val data = prefs.getString(
+            "flights",
+            "[]"
+        ) ?: "[]"
+ 
+        val array = JSONArray(data)
+ 
+        if (
+            flight.storageIndex >= 0 &&
+            flight.storageIndex < array.length()
+        ) {
+            array.remove(flight.storageIndex)
+ 
+            prefs.edit()
+                .putString(
+                    "flights",
+                    array.toString()
+                )
+                .apply()
+ 
+            Toast.makeText(
+                context,
+                "Flight deleted",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+ 
+        selectedFlight = null
+        flightToDelete = null
+        showHistory = true
+    }
+ 
+    fun checkAndSaveFlight() {
+ 
+        val missing = stamps
+            .filter {
+                it.name in importantTimingNames &&
+                it.time.isNullOrBlank()
+            }
+            .map { it.name }
+ 
+        if (missing.isEmpty()) {
+            saveFlight()
+        } else {
+            missingTimings = missing
+            showMissingWarning = true
+        }
     }
  
     BackHandler(
@@ -327,6 +506,79 @@ fun RampDutyApp() {
                 started = false
             }
         }
+    }
+ 
+    if (showMissingWarning) {
+ 
+        AlertDialog(
+            onDismissRequest = {
+                showMissingWarning = false
+            },
+            title = {
+                Text("Some timings are missing")
+            },
+            text = {
+                Text(
+                    "Missing: ${
+                        missingTimings.joinToString(", ")
+                    }\n\nSave this flight anyway?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showMissingWarning = false
+                        saveFlight()
+                    }
+                ) {
+                    Text("SAVE ANYWAY")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showMissingWarning = false
+                    }
+                ) {
+                    Text("CANCEL")
+                }
+            }
+        )
+    }
+ 
+    flightToDelete?.let { flight ->
+ 
+        AlertDialog(
+            onDismissRequest = {
+                flightToDelete = null
+            },
+            title = {
+                Text("Delete Flight?")
+            },
+            text = {
+                Text(
+                    "Delete ${flight.flightNo} from history? This cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deleteFlight(flight)
+                    }
+                ) {
+                    Text("DELETE")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        flightToDelete = null
+                    }
+                ) {
+                    Text("CANCEL")
+                }
+            }
+        )
     }
  
     MaterialTheme {
@@ -446,9 +698,25 @@ fun RampDutyApp() {
                                 _,
                                 name ->
  
+                            val isImportant =
+                                name in importantTimingNames
+ 
                             Card(
                                 modifier =
-                                    Modifier.fillMaxWidth()
+                                    Modifier.fillMaxWidth(),
+                                colors =
+                                    CardDefaults.cardColors(
+                                        containerColor =
+                                            if (isImportant) {
+                                                MaterialTheme
+                                                    .colorScheme
+                                                    .secondaryContainer
+                                            } else {
+                                                MaterialTheme
+                                                    .colorScheme
+                                                    .surfaceVariant
+                                            }
+                                    )
                             ) {
                                 Row(
                                     modifier =
@@ -550,6 +818,40 @@ fun RampDutyApp() {
                                     }
                                     ?: "No notes"
                             )
+ 
+                            Spacer(
+                                Modifier.height(16.dp)
+                            )
+ 
+                            Button(
+                                onClick = {
+                                    shareFlightReport(flight)
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+                                Text("SHARE FLIGHT REPORT")
+                            }
+ 
+                            OutlinedButton(
+                                onClick = {
+                                    copyFlightReport(flight)
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+                                Text("COPY FLIGHT DETAILS")
+                            }
+ 
+                            OutlinedButton(
+                                onClick = {
+                                    flightToDelete = flight
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+                                Text("DELETE FLIGHT")
+                            }
                         }
                     }
                 }
@@ -558,6 +860,32 @@ fun RampDutyApp() {
             showHistory -> {
  
                 val history = loadHistory()
+ 
+                val filteredHistory =
+                    if (historySearch.isBlank()) {
+                        history
+                    } else {
+                        val query =
+                            historySearch.trim().lowercase()
+ 
+                        history.filter { flight ->
+                            flight.flightNo
+                                .lowercase()
+                                .contains(query) ||
+                            flight.registration
+                                .lowercase()
+                                .contains(query) ||
+                            flight.aircraft
+                                .lowercase()
+                                .contains(query) ||
+                            flight.stand
+                                .lowercase()
+                                .contains(query) ||
+                            flight.date
+                                .lowercase()
+                                .contains(query)
+                        }
+                    }
  
                 Scaffold(
                     topBar = {
@@ -583,86 +911,115 @@ fun RampDutyApp() {
                     }
                 ) { padding ->
  
-                    if (history.isEmpty()) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(padding)
+                                .padding(16.dp)
+                    ) {
  
-                        Box(
+                        OutlinedTextField(
+                            value = historySearch,
+                            onValueChange = {
+                                historySearch = it
+                            },
                             modifier =
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(padding)
-                                    .padding(16.dp)
-                        ) {
+                                Modifier.fillMaxWidth(),
+                            label = {
+                                Text(
+                                    "Search flight, registration, date..."
+                                )
+                            },
+                            singleLine = true
+                        )
+ 
+                        Spacer(
+                            Modifier.height(12.dp)
+                        )
+ 
+                        if (history.isEmpty()) {
+ 
                             Text(
                                 "No saved flights yet."
                             )
-                        }
  
-                    } else {
- 
-                        LazyColumn(
-                            modifier =
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(padding)
-                                    .padding(16.dp),
-                            verticalArrangement =
-                                Arrangement.spacedBy(10.dp)
+                        } else if (
+                            filteredHistory.isEmpty()
                         ) {
  
-                            itemsIndexed(history) {
-                                    _,
-                                    flight ->
+                            Text(
+                                "No matching flights found."
+                            )
  
-                                Card(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                selectedFlight =
-                                                    flight
-                                            }
+                        } else {
+ 
+                            LazyColumn(
+                                modifier =
+                                    Modifier.fillMaxSize(),
+                                verticalArrangement =
+                                    Arrangement.spacedBy(10.dp)
+                            ) {
+ 
+                                itemsIndexed(
+                                    filteredHistory
                                 ) {
+                                        _,
+                                        flight ->
  
-                                    Column(
+                                    Card(
                                         modifier =
-                                            Modifier.padding(16.dp)
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    selectedFlight =
+                                                        flight
+                                                }
                                     ) {
  
-                                        Text(
-                                            flight.flightNo,
-                                            style =
-                                                MaterialTheme
-                                                    .typography
-                                                    .titleLarge
-                                        )
+                                        Column(
+                                            modifier =
+                                                Modifier.padding(
+                                                    16.dp
+                                                )
+                                        ) {
  
-                                        Spacer(
-                                            Modifier.height(4.dp)
-                                        )
+                                            Text(
+                                                flight.flightNo,
+                                                style =
+                                                    MaterialTheme
+                                                        .typography
+                                                        .titleLarge
+                                            )
  
-                                        Text(
-                                            "Registration: ${flight.registration}"
-                                        )
+                                            Spacer(
+                                                Modifier.height(4.dp)
+                                            )
  
-                                        Text(
-                                            "Aircraft: ${flight.aircraft}"
-                                        )
+                                            Text(
+                                                "Registration: ${flight.registration}"
+                                            )
  
-                                        Text(
-                                            "Stand: ${flight.stand}"
-                                        )
+                                            Text(
+                                                "Aircraft: ${flight.aircraft}"
+                                            )
  
-                                        Text(
-                                            "Date: ${flight.date}"
-                                        )
+                                            Text(
+                                                "Stand: ${flight.stand}"
+                                            )
  
-                                        Spacer(
-                                            Modifier.height(6.dp)
-                                        )
+                                            Text(
+                                                "Date: ${flight.date}"
+                                            )
  
-                                        Text(
-                                            "Tap to view full details"
-                                        )
+                                            Spacer(
+                                                Modifier.height(8.dp)
+                                            )
+ 
+                                            Text(
+                                                "Tap to view full details"
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -807,9 +1164,26 @@ fun RampDutyApp() {
                                     index,
                                     stamp ->
  
+                                val isImportant =
+                                    stamp.name in
+                                        importantTimingNames
+ 
                                 Card(
                                     modifier =
-                                        Modifier.fillMaxWidth()
+                                        Modifier.fillMaxWidth(),
+                                    colors =
+                                        CardDefaults.cardColors(
+                                            containerColor =
+                                                if (isImportant) {
+                                                    MaterialTheme
+                                                        .colorScheme
+                                                        .secondaryContainer
+                                                } else {
+                                                    MaterialTheme
+                                                        .colorScheme
+                                                        .surfaceVariant
+                                                }
+                                        )
                                 ) {
  
                                     Column(
@@ -1001,7 +1375,7 @@ fun RampDutyApp() {
  
                                 Button(
                                     onClick = {
-                                        saveFlight()
+                                        checkAndSaveFlight()
                                     },
                                     modifier =
                                         Modifier.fillMaxWidth()
