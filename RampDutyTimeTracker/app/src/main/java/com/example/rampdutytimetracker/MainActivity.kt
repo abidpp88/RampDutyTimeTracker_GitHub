@@ -1244,7 +1244,7 @@ fun RampDutyApp() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(outerPadding)
+                    .padding(outerPadding) {
                     when (page) {
     AppPage.SPLASH -> {
         LaunchedEffect(Unit) {
