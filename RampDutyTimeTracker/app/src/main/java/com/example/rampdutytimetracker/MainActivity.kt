@@ -5,12 +5,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +27,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -522,7 +531,7 @@ fun RampDutyApp() {
         )
  
         return buildString {
-            appendLine("Ramp Duty Time Tracker")
+            appendLine("Ramp Task Time Tracker")
             appendLine()
             appendLine("Task: ${flight.taskType}")
             appendLine("Flight: ${flight.flightNo}")
@@ -611,6 +620,107 @@ fun RampDutyApp() {
         context.startActivity(
             Intent.createChooser(intent, "Share Flight Report")
         )
+    }
+ 
+    fun shareFlightAsPdf(flight: SavedFlight) {
+        try {
+            val reportLines = buildFlightReport(flight).lines()
+            val pdf = PdfDocument()
+            val paint = Paint().apply {
+                textSize = 12f
+                isAntiAlias = true
+            }
+            val titlePaint = Paint().apply {
+                textSize = 20f
+                isFakeBoldText = true
+                isAntiAlias = true
+            }
+ 
+            var pageNumber = 1
+            var page = pdf.startPage(
+                PdfDocument.PageInfo.Builder(595, 842, pageNumber).create()
+            )
+            var canvas = page.canvas
+            var y = 55f
+ 
+            canvas.drawText(
+                "Ramp Task Time Tracker",
+                40f,
+                y,
+                titlePaint
+            )
+            y += 32f
+ 
+            reportLines.drop(1).forEach { line ->
+                if (y > 800f) {
+                    pdf.finishPage(page)
+                    pageNumber++
+                    page = pdf.startPage(
+                        PdfDocument.PageInfo.Builder(
+                            595,
+                            842,
+                            pageNumber
+                        ).create()
+                    )
+                    canvas = page.canvas
+                    y = 55f
+                }
+ 
+                canvas.drawText(
+                    line.take(85),
+                    40f,
+                    y,
+                    paint
+                )
+                y += 20f
+            }
+ 
+            pdf.finishPage(page)
+ 
+            val pdfDir = File(context.cacheDir, "shared_pdfs").apply {
+                mkdirs()
+            }
+            val safeFlightNo = flight.flightNo
+                .replace(Regex("[^A-Za-z0-9_-]"), "_")
+            val file = File(
+                pdfDir,
+                "Ramp_Task_${safeFlightNo}_${System.currentTimeMillis()}.pdf"
+            )
+ 
+            FileOutputStream(file).use { output ->
+                pdf.writeTo(output)
+            }
+            pdf.close()
+ 
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+ 
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(
+                    Intent.EXTRA_SUBJECT,
+                    "Ramp Task Report - ${flight.flightNo}"
+                )
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+ 
+            context.startActivity(
+                Intent.createChooser(
+                    shareIntent,
+                    "Share Flight Report as PDF"
+                )
+            )
+        } catch (e: Exception) {
+            Toast.makeText(
+                context,
+                "Unable to create PDF: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
  
     fun prepareEdit(flight: SavedFlight) {
@@ -818,7 +928,7 @@ fun RampDutyApp() {
  
                             item {
                                 Text(
-                                    "Ramp Duty",
+                                    "Ramp Task",
                                     style =
                                         MaterialTheme
                                             .typography
@@ -859,7 +969,7 @@ fun RampDutyApp() {
                                 OperationCard(
                                     title = "ARRIVAL",
                                     subtitle = "Arrival handling timings",
-                                    symbol = "✈",
+                                    symbol = "↘ ✈",
                                     onClick = {
                                         startNewTask("ARRIVAL")
                                     }
@@ -870,7 +980,7 @@ fun RampDutyApp() {
                                 OperationCard(
                                     title = "DEPARTURE",
                                     subtitle = "Departure handling timings",
-                                    symbol = "↗",
+                                    symbol = "✈ ↗",
                                     onClick = {
                                         startNewTask("DEPARTURE")
                                     }
@@ -881,7 +991,7 @@ fun RampDutyApp() {
                                 OperationCard(
                                     title = "TURNAROUND",
                                     subtitle = "Complete arrival + departure",
-                                    symbol = "↻",
+                                    symbol = "✈ ↻",
                                     onClick = {
                                         startNewTask("TURNAROUND")
                                     }
@@ -1538,6 +1648,20 @@ fun RampDutyApp() {
  
                                         OutlinedButton(
                                             onClick = {
+                                                shareFlightAsPdf(
+                                                    flight
+                                                )
+                                            },
+                                            modifier =
+                                                Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                "SHARE AS PDF"
+                                            )
+                                        }
+ 
+                                        OutlinedButton(
+                                            onClick = {
                                                 shareFlightReport(
                                                     flight
                                                 )
@@ -1546,7 +1670,7 @@ fun RampDutyApp() {
                                                 Modifier.fillMaxWidth()
                                         ) {
                                             Text(
-                                                "SHARE FLIGHT REPORT"
+                                                "SHARE AS TEXT"
                                             )
                                         }
  
@@ -1767,24 +1891,35 @@ fun OperationCard(
     symbol: String,
     onClick: () -> Unit
 ) {
-    ElevatedCard(
+    val cardBrush = when (title) {
+        "ARRIVAL" -> Brush.horizontalGradient(
+            listOf(Color(0xFF7B61FF), Color(0xFFA970FF))
+        )
+        "DEPARTURE" -> Brush.horizontalGradient(
+            listOf(Color(0xFF5A86F7), Color(0xFF7B61FF))
+        )
+        else -> Brush.horizontalGradient(
+            listOf(Color(0xFF54C8A0), Color(0xFF65B7D8))
+        )
+    }
+ 
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(118.dp)
-            .clickable { onClick() }
+            .height(124.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(24.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
+                .background(cardBrush)
                 .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
                 shape = MaterialTheme.shapes.large,
-                color =
-                    MaterialTheme
-                        .colorScheme
-                        .primaryContainer
+                color = Color.White.copy(alpha = 0.20f)
             ) {
                 Box(
                     modifier =
@@ -1814,7 +1949,8 @@ fun OperationCard(
                         MaterialTheme
                             .typography
                             .titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
  
                 Spacer(
@@ -1826,7 +1962,8 @@ fun OperationCard(
                     style =
                         MaterialTheme
                             .typography
-                            .bodyMedium
+                            .bodyMedium,
+                    color = Color.White
                 )
             }
         }
