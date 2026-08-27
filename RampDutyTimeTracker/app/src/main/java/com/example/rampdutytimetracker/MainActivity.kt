@@ -690,28 +690,28 @@ fun RampDutyApp() {
             var y = 0f
 
             fun drawPageHeader() {
-                canvas.drawRect(0f, 0f, pageWidth.toFloat(), 112f, Paint().apply {
+                canvas.drawRect(0f, 0f, pageWidth.toFloat(), 92f, Paint().apply {
                     color = navy
                 })
 
                 canvas.drawText(
                     "RAMP TASK TIME TRACKER",
                     margin,
-                    48f,
+                    38f,
                     titlePaint
                 )
 
                 canvas.drawText(
                     "${flight.taskType} • FLIGHT REPORT",
                     margin,
-                    72f,
+                    59f,
                     subtitlePaint
                 )
 
                 canvas.drawText(
                     "Flight ${flight.flightNo}",
                     pageWidth - margin - 105f,
-                    48f,
+                    38f,
                     Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         color = white
                         textSize = 13f
@@ -722,11 +722,11 @@ fun RampDutyApp() {
                 canvas.drawText(
                     "Generated from saved ramp timings",
                     pageWidth - margin - 155f,
-                    72f,
+                    59f,
                     smallPaint.apply { color = AndroidColor.rgb(220, 230, 255) }
                 )
 
-                y = 136f
+                y = 108f
             }
 
             fun drawFooter() {
@@ -773,55 +773,55 @@ fun RampDutyApp() {
             }
 
             fun sectionTitle(title: String) {
-                newPageIfNeeded(34f)
+                newPageIfNeeded(22f)
                 canvas.drawRoundRect(
-                    RectF(margin, y, pageWidth - margin, y + 26f),
+                    RectF(margin, y, pageWidth - margin, y + 21f),
                     8f,
                     8f,
                     Paint(Paint.ANTI_ALIAS_FLAG).apply { color = paleBlue }
                 )
-                canvas.drawText(title, margin + 12f, y + 18f, sectionPaint)
-                y += 38f
+                canvas.drawText(title, margin + 12f, y + 15f, sectionPaint)
+                y += 28f
             }
 
             fun infoRow(label1: String, value1: String, label2: String, value2: String) {
-                newPageIfNeeded(54f)
+                newPageIfNeeded(42f)
                 val half = contentWidth / 2f
 
-                canvas.drawText(label1.uppercase(), margin + 10f, y + 13f, labelPaint)
-                canvas.drawText(value1, margin + 10f, y + 31f, valueBoldPaint)
+                canvas.drawText(label1.uppercase(), margin + 10f, y + 11f, labelPaint)
+                canvas.drawText(value1, margin + 10f, y + 25f, valueBoldPaint)
 
-                canvas.drawText(label2.uppercase(), margin + half + 10f, y + 13f, labelPaint)
-                canvas.drawText(value2, margin + half + 10f, y + 31f, valueBoldPaint)
+                canvas.drawText(label2.uppercase(), margin + half + 10f, y + 11f, labelPaint)
+                canvas.drawText(value2, margin + half + 10f, y + 25f, valueBoldPaint)
 
                 canvas.drawLine(
                     margin,
-                    y + 42f,
+                    y + 33f,
                     pageWidth - margin,
-                    y + 42f,
+                    y + 33f,
                     Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         color = AndroidColor.rgb(230, 233, 239)
                         strokeWidth = 1f
                     }
                 )
 
-                y += 50f
+                y += 38f
             }
 
             fun timingRow(name: String, time: String, count: String?) {
-                newPageIfNeeded(28f)
+                newPageIfNeeded(22f)
 
                 if (((y / 28f).toInt() % 2) == 0) {
                     canvas.drawRect(
                         margin,
                         y - 4f,
                         pageWidth - margin,
-                        y + 20f,
+                        y + 16f,
                         Paint().apply { color = lightGrey }
                     )
                 }
 
-                canvas.drawText(name, margin + 10f, y + 12f, valuePaint)
+                canvas.drawText(name, margin + 10f, y + 10f, valuePaint)
 
                 val display = if (count.isNullOrBlank()) {
                     time
@@ -832,31 +832,31 @@ fun RampDutyApp() {
                 canvas.drawText(
                     display,
                     pageWidth - margin - 150f,
-                    y + 12f,
+                    y + 10f,
                     valueBoldPaint
                 )
 
-                y += 26f
+                y += 20f
             }
 
             fun performanceRow(label: String, value: String) {
-                newPageIfNeeded(32f)
+                newPageIfNeeded(25f)
                 canvas.drawRoundRect(
-                    RectF(margin, y, pageWidth - margin, y + 26f),
+                    RectF(margin, y, pageWidth - margin, y + 21f),
                     7f,
                     7f,
                     Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         color = AndroidColor.rgb(248, 250, 255)
                     }
                 )
-                canvas.drawText(label, margin + 10f, y + 17f, valuePaint)
+                canvas.drawText(label, margin + 10f, y + 14f, valuePaint)
                 canvas.drawText(
                     value,
                     pageWidth - margin - 115f,
-                    y + 17f,
+                    y + 14f,
                     valueBoldPaint
                 )
-                y += 32f
+                y += 25f
             }
 
             drawPageHeader()
@@ -898,7 +898,7 @@ fun RampDutyApp() {
                     "BT Last Baggage"
                 )
 
-                y += 8f
+                y += 4f
                 sectionTitle("BAGGAGE DELIVERY PERFORMANCE • FROM CHOCKS ON")
 
                 performanceRow(
@@ -931,7 +931,7 @@ fun RampDutyApp() {
                 )
             }
 
-            y += 8f
+            y += 4f
             sectionTitle("NOTES")
             newPageIfNeeded(58f)
 
