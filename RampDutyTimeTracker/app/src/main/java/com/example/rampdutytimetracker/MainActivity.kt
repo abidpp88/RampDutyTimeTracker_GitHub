@@ -1245,7 +1245,7 @@ fun RampDutyApp() {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(outerPadding)
-            ) {when (page) {
+                    when (page) {
     AppPage.SPLASH -> {
         LaunchedEffect(Unit) {
             delay(1800)
@@ -1319,8 +1319,6 @@ fun RampDutyApp() {
     }
 
     AppPage.HOME -> {
-                when (page) {
-                    AppPage.HOME -> {
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
