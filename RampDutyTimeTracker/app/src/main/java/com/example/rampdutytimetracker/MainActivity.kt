@@ -42,6 +42,7 @@ data class SavedFlight(
     val notes: String,
     val taskType: String,
     val timings: Map<String, String>,
+    val bagCounts: Map<String, String>,
     val storageIndex: Int
 )
  
@@ -83,12 +84,18 @@ fun RampDutyApp() {
     )
  
     val departureNames = listOf(
-        "Step Removed",
-        "GPU Removed",
-        "A/C Removed",
+        "Task Started",
+        "LIR/NOTOC Received",
+        "Cargo Received",
+        "First Bag Received",
+        "D-15 Baggage Received",
         "Last Bag Received",
         "Last Bag Loaded",
-        "Door Closed",
+        "Hold Closed",
+        "Cabin Door Closed",
+        "GPU Removed",
+        "A/C Removed",
+        "Step Removed",
         "Off Block"
     )
  
@@ -96,19 +103,24 @@ fun RampDutyApp() {
         "On Block",
         "Chocks On",
         "Step Connected",
-        "Step Removed",
         "GPU Connected",
-        "GPU Removed",
         "A/C Connected",
-        "A/C Removed",
-        "Door Open",
-        "Door Closed",
+        "Hold Open",
         "BY First Bag",
         "BY Last Bag",
         "BT First Bag",
         "BT Last Bag",
+        "LIR/NOTOC Received",
+        "Cargo Received",
+        "First Bag Received",
+        "D-10 Baggage Received",
         "Last Bag Received",
         "Last Bag Loaded",
+        "Hold Closed",
+        "Cabin Door Closed",
+        "GPU Removed",
+        "A/C Removed",
+        "Step Removed",
         "Off Block"
     )
  
@@ -163,6 +175,7 @@ fun RampDutyApp() {
         stand = ""
         notes = ""
         stamps.clear()
+        bagCounts.clear()
     }
  
     fun startNewTask(taskType: String) {
@@ -276,6 +289,8 @@ fun RampDutyApp() {
             val item = array.getJSONObject(i)
             val timingsObject = item.optJSONObject("timings") ?: JSONObject()
             val timingsMap = mutableMapOf<String, String>()
+            val countsObject = item.optJSONObject("bagCounts") ?: JSONObject()
+            val countsMap = mutableMapOf<String, String>()
  
             val keys = timingsObject.keys()
             while (keys.hasNext()) {
@@ -287,6 +302,12 @@ fun RampDutyApp() {
                 if (!timingsMap.containsKey(name)) {
                     timingsMap[name] = ""
                 }
+            }
+ 
+            val countKeys = countsObject.keys()
+            while (countKeys.hasNext()) {
+                val key = countKeys.next()
+                countsMap[key] = countsObject.optString(key, "")
             }
  
             var taskType = item.optString("taskType", "")
@@ -304,6 +325,7 @@ fun RampDutyApp() {
                     notes = item.optString("notes"),
                     taskType = taskType,
                     timings = timingsMap,
+                    bagCounts = countsMap,
                     storageIndex = i
                 )
             )
@@ -321,7 +343,8 @@ fun RampDutyApp() {
         standNumber: String,
         dateText: String,
         notesText: String,
-        stampList: List<Stamp>
+        stampList: List<Stamp>,
+        counts: Map<String, String>
     ) {
         obj.put("flightNo", flightNumber)
         obj.put("registration", reg)
@@ -336,6 +359,12 @@ fun RampDutyApp() {
             timings.put(it.name, it.time ?: "")
         }
         obj.put("timings", timings)
+ 
+        val countJson = JSONObject()
+        counts.forEach { (name, count) ->
+            countJson.put(name, count)
+        }
+        obj.put("bagCounts", countJson)
     }
  
     fun saveNewFlight() {
@@ -358,7 +387,8 @@ fun RampDutyApp() {
             standNumber = stand,
             dateText = dateText,
             notesText = notes,
-            stampList = stamps
+            stampList = stamps,
+            counts = bagCounts
         )
  
         array.put(obj)
@@ -405,7 +435,8 @@ fun RampDutyApp() {
             standNumber = stand,
             dateText = original.date,
             notesText = notes,
-            stampList = stamps
+            stampList = stamps,
+            counts = bagCounts
         )
  
         array.put(original.storageIndex, updated)
@@ -429,6 +460,7 @@ fun RampDutyApp() {
             notes = notes,
             taskType = selectedTaskType,
             timings = stamps.associate { it.name to (it.time ?: "") },
+            bagCounts = bagCounts.toMap(),
             storageIndex = original.storageIndex
         )
  
@@ -504,7 +536,13 @@ fun RampDutyApp() {
                 val time = flight.timings[name]
                     ?.takeIf { it.isNotBlank() }
                     ?: "—"
-                appendLine("$name: $time")
+                val count = flight.bagCounts[name]
+                    ?.takeIf { it.isNotBlank() }
+                if (count != null) {
+                    appendLine("$name: $time • Count: $count")
+                } else {
+                    appendLine("$name: $time")
+                }
             }
  
             if (flight.taskType == "ARRIVAL" || flight.taskType == "TURNAROUND") {
@@ -584,6 +622,8 @@ fun RampDutyApp() {
         notes = flight.notes
  
         stamps.clear()
+        bagCounts.clear()
+        bagCounts.putAll(flight.bagCounts)
         stamps.addAll(
             namesForTask(flight.taskType).map { name ->
                 Stamp(
@@ -1039,6 +1079,12 @@ fun RampDutyApp() {
  
                                     TimingCard(
                                         stamp = stamp,
+                                        bagCount = bagCounts[stamp.name] ?: "",
+                                        onBagCountChange = { value ->
+                                            if (value.all { it.isDigit() }) {
+                                                bagCounts[stamp.name] = value
+                                            }
+                                        },
                                         onRecord = {
                                             record(index)
                                         },
@@ -1402,7 +1448,12 @@ fun RampDutyApp() {
                                                     ?.takeIf {
                                                         it.isNotBlank()
                                                     }
-                                                    ?: "—"
+                                                    ?: "—",
+                                            bagCount =
+                                                flight.bagCounts[name]
+                                                    ?.takeIf {
+                                                        it.isNotBlank()
+                                                    }
                                         )
                                     }
  
@@ -1645,6 +1696,12 @@ fun RampDutyApp() {
  
                                     TimingCard(
                                         stamp = stamp,
+                                        bagCount = bagCounts[stamp.name] ?: "",
+                                        onBagCountChange = { value ->
+                                            if (value.all { it.isDigit() }) {
+                                                bagCounts[stamp.name] = value
+                                            }
+                                        },
                                         onRecord = {
                                             record(index)
                                         },
@@ -1799,6 +1856,8 @@ fun TaskBadge(taskType: String) {
 @Composable
 fun TimingCard(
     stamp: Stamp,
+    bagCount: String,
+    onBagCountChange: (String) -> Unit,
     onRecord: () -> Unit,
     onEdit: () -> Unit,
     onReset: () -> Unit
@@ -2037,7 +2096,8 @@ fun FlightInfoCard(
 @Composable
 fun SavedTimingRow(
     name: String,
-    time: String
+    time: String,
+    bagCount: String? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -2055,14 +2115,27 @@ fun SavedTimingRow(
                 fontWeight = FontWeight.Medium
             )
  
-            Text(
-                time,
-                color =
-                    MaterialTheme
-                        .colorScheme
-                        .primary,
-                fontWeight = FontWeight.Bold
-            )
+            Column(
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(
+                    time,
+                    color =
+                        MaterialTheme
+                            .colorScheme
+                            .primary,
+                    fontWeight = FontWeight.Bold
+                )
+                if (!bagCount.isNullOrBlank()) {
+                    Text(
+                        "Count: $bagCount",
+                        style =
+                            MaterialTheme
+                                .typography
+                                .labelMedium
+                    )
+                }
+            }
         }
     }
 }
