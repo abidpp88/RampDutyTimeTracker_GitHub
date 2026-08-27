@@ -47,6 +47,9 @@ data class Stamp(
 
 data class SavedFlight(
     val flightNo: String,
+    val departureFlightNo: String = "",
+    val sta: String = "",
+    val std: String = "",
     val registration: String,
     val aircraft: String,
     val stand: String,
@@ -160,6 +163,9 @@ fun RampDutyApp() {
     var selectedTaskType by remember { mutableStateOf("") }
 
     var flightNo by remember { mutableStateOf("") }
+    var departureFlightNo by remember { mutableStateOf("") }
+    var sta by remember { mutableStateOf("") }
+    var std by remember { mutableStateOf("") }
     var registration by remember { mutableStateOf("") }
     var aircraft by remember { mutableStateOf("") }
     var stand by remember { mutableStateOf("") }
@@ -186,6 +192,9 @@ fun RampDutyApp() {
 
     fun resetForm() {
         flightNo = ""
+        departureFlightNo = ""
+        sta = ""
+        std = ""
         registration = ""
         aircraft = ""
         stand = ""
@@ -327,6 +336,9 @@ fun RampDutyApp() {
             list.add(
                 SavedFlight(
                     flightNo = item.optString("flightNo"),
+                    departureFlightNo = item.optString("departureFlightNo", ""),
+                    sta = item.optString("sta", ""),
+                    std = item.optString("std", ""),
                     registration = item.optString("registration"),
                     aircraft = item.optString("aircraft"),
                     stand = item.optString("stand"),
@@ -347,6 +359,9 @@ fun RampDutyApp() {
         obj: JSONObject,
         taskType: String,
         flightNumber: String,
+        departureFlightNumber: String,
+        staTime: String,
+        stdTime: String,
         reg: String,
         aircraftType: String,
         standNumber: String,
@@ -356,6 +371,9 @@ fun RampDutyApp() {
         counts: Map<String, String>
     ) {
         obj.put("flightNo", flightNumber)
+        obj.put("departureFlightNo", departureFlightNumber)
+        obj.put("sta", staTime)
+        obj.put("std", stdTime)
         obj.put("registration", reg)
         obj.put("aircraft", aircraftType)
         obj.put("stand", standNumber)
@@ -391,6 +409,9 @@ fun RampDutyApp() {
             obj = obj,
             taskType = selectedTaskType,
             flightNumber = flightNo,
+            departureFlightNumber = departureFlightNo,
+            staTime = sta,
+            stdTime = std,
             reg = registration,
             aircraftType = aircraft,
             standNumber = stand,
@@ -436,6 +457,9 @@ fun RampDutyApp() {
             obj = updated,
             taskType = selectedTaskType,
             flightNumber = flightNo,
+            departureFlightNumber = departureFlightNo,
+            staTime = sta,
+            stdTime = std,
             reg = registration,
             aircraftType = aircraft,
             standNumber = stand,
@@ -456,6 +480,9 @@ fun RampDutyApp() {
 
         selectedFlight = SavedFlight(
             flightNo = flightNo,
+            departureFlightNo = departureFlightNo,
+            sta = sta,
+            std = std,
             registration = registration,
             aircraft = aircraft,
             stand = stand,
@@ -525,7 +552,16 @@ fun RampDutyApp() {
             appendLine("Ramp Task Time Tracker")
             appendLine()
             appendLine("Task: ${flight.taskType}")
-            appendLine("Flight: ${flight.flightNo}")
+            if (flight.taskType == "TURNAROUND") {
+                appendLine("Arrival Flight: ${flight.flightNo}")
+                appendLine("STA: ${flight.sta.ifBlank { "—" }}")
+                appendLine("Departure Flight: ${flight.departureFlightNo.ifBlank { "—" }}")
+                appendLine("STD: ${flight.std.ifBlank { "—" }}")
+            } else {
+                appendLine("Flight: ${flight.flightNo}")
+                if (flight.taskType == "ARRIVAL") appendLine("STA: ${flight.sta.ifBlank { "—" }}")
+                if (flight.taskType == "DEPARTURE") appendLine("STD: ${flight.std.ifBlank { "—" }}")
+            }
             appendLine("Registration: ${flight.registration}")
             appendLine("Aircraft: ${flight.aircraft}")
             appendLine("Stand: ${flight.stand}")
@@ -862,7 +898,14 @@ fun RampDutyApp() {
             drawPageHeader()
 
             sectionTitle("FLIGHT INFORMATION")
-            infoRow("Flight", flight.flightNo, "Task", flight.taskType)
+            if (flight.taskType == "TURNAROUND") {
+                infoRow("Arrival Flight", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
+                infoRow("Departure Flight", flight.departureFlightNo.ifBlank { "—" }, "STD", flight.std.ifBlank { "—" })
+            } else if (flight.taskType == "ARRIVAL") {
+                infoRow("Flight", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
+            } else {
+                infoRow("Flight", flight.flightNo, "STD", flight.std.ifBlank { "—" })
+            }
             infoRow("Registration", flight.registration, "Aircraft", flight.aircraft)
             infoRow("Stand", flight.stand, "Date", flight.date)
 
@@ -1029,6 +1072,9 @@ fun RampDutyApp() {
         selectedFlight = flight
         selectedTaskType = flight.taskType
         flightNo = flight.flightNo
+        departureFlightNo = flight.departureFlightNo
+        sta = flight.sta
+        std = flight.std
         registration = flight.registration
         aircraft = flight.aircraft
         stand = flight.stand
@@ -1275,10 +1321,16 @@ fun RampDutyApp() {
                         FlightSetupScreen(
                             taskType = selectedTaskType,
                             flightNo = flightNo,
+                            departureFlightNo = departureFlightNo,
+                            sta = sta,
+                            std = std,
                             registration = registration,
                             aircraft = aircraft,
                             stand = stand,
                             onFlightNoChange = { flightNo = it },
+                            onDepartureFlightNoChange = { departureFlightNo = it },
+                            onStaChange = { sta = it },
+                            onStdChange = { std = it },
                             onRegistrationChange = { registration = it },
                             onAircraftChange = { aircraft = it },
                             onStandChange = { stand = it },
@@ -1431,6 +1483,7 @@ fun RampDutyApp() {
 
                                 history.filter { flight ->
                                     flight.flightNo.lowercase().contains(query) ||
+                                        flight.departureFlightNo.lowercase().contains(query) ||
                                         flight.registration.lowercase().contains(query) ||
                                         flight.aircraft.lowercase().contains(query) ||
                                         flight.stand.lowercase().contains(query) ||
@@ -1851,21 +1904,41 @@ fun RampDutyApp() {
 fun FlightSetupScreen(
     taskType: String,
     flightNo: String,
+    departureFlightNo: String,
+    sta: String,
+    std: String,
     registration: String,
     aircraft: String,
     stand: String,
     onFlightNoChange: (String) -> Unit,
+    onDepartureFlightNoChange: (String) -> Unit,
+    onStaChange: (String) -> Unit,
+    onStdChange: (String) -> Unit,
     onRegistrationChange: (String) -> Unit,
     onAircraftChange: (String) -> Unit,
     onStandChange: (String) -> Unit,
     onBack: () -> Unit,
     onStart: () -> Unit
 ) {
+    val scheduleReady = when (taskType) {
+        "ARRIVAL" -> sta.isNotBlank()
+        "DEPARTURE" -> std.isNotBlank()
+        else -> departureFlightNo.isNotBlank() && sta.isNotBlank() && std.isNotBlank()
+    }
     val allFieldsReady =
-        flightNo.isNotBlank() &&
-            registration.isNotBlank() &&
-            aircraft.isNotBlank() &&
-            stand.isNotBlank()
+        flightNo.isNotBlank() && scheduleReady &&
+            registration.isNotBlank() && aircraft.isNotBlank() && stand.isNotBlank()
+
+    val themeColor = when (taskType) {
+        "ARRIVAL" -> Color(0xFF087A2F)
+        "DEPARTURE" -> Color(0xFF4B1FA3)
+        else -> Color(0xFFD31313)
+    }
+    val themeDark = when (taskType) {
+        "ARRIVAL" -> Color(0xFF04551F)
+        "DEPARTURE" -> Color(0xFF2C126B)
+        else -> Color(0xFF9D0808)
+    }
 
     Scaffold(
         containerColor = Color.White,
@@ -1876,8 +1949,8 @@ fun FlightSetupScreen(
                     .background(
                         Brush.horizontalGradient(
                             listOf(
-                                Navy,
-                                RoyalBlue
+                                themeDark,
+                                themeColor
                             )
                         )
                     )
@@ -1965,7 +2038,7 @@ fun FlightSetupScreen(
                         Surface(
                             modifier = Modifier.size(58.dp),
                             shape = RoundedCornerShape(18.dp),
-                            color = Navy
+                            color = themeColor
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center
@@ -1985,7 +2058,7 @@ fun FlightSetupScreen(
                                 "$taskType FLIGHT",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = Navy
+                                color = themeColor
                             )
 
                             Spacer(Modifier.height(3.dp))
@@ -2008,6 +2081,42 @@ fun FlightSetupScreen(
                     hint = "Enter flight number",
                     symbol = "✈"
                 )
+            }
+
+            if (taskType == "ARRIVAL" || taskType == "TURNAROUND") {
+                item {
+                    FlightSetupField(
+                        value = sta,
+                        onValueChange = onStaChange,
+                        title = "STA (Scheduled Time of Arrival)",
+                        hint = "HH:mm",
+                        symbol = "◷"
+                    )
+                }
+            }
+
+            if (taskType == "TURNAROUND") {
+                item {
+                    FlightSetupField(
+                        value = departureFlightNo,
+                        onValueChange = onDepartureFlightNoChange,
+                        title = "Departure Flight Number",
+                        hint = "Enter departure flight number",
+                        symbol = "✈"
+                    )
+                }
+            }
+
+            if (taskType == "DEPARTURE" || taskType == "TURNAROUND") {
+                item {
+                    FlightSetupField(
+                        value = std,
+                        onValueChange = onStdChange,
+                        title = "STD (Scheduled Time of Departure)",
+                        hint = "HH:mm",
+                        symbol = "◷"
+                    )
+                }
             }
 
             item {
@@ -2049,12 +2158,12 @@ fun FlightSetupScreen(
                         .height(58.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Navy,
+                        containerColor = themeColor,
                         disabledContainerColor = Color(0xFFD9DEE8)
                     )
                 ) {
                     Text(
-                        "▶   START FLIGHT",
+                        "▣   SAVE & START TASK",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium
                     )
@@ -2074,7 +2183,7 @@ fun FlightSetupScreen(
                         Text(
                             "ⓘ",
                             style = MaterialTheme.typography.titleLarge,
-                            color = Navy
+                            color = themeColor
                         )
 
                         Spacer(Modifier.width(12.dp))
@@ -2083,7 +2192,7 @@ fun FlightSetupScreen(
                             Text(
                                 "All fields are required to start tracking",
                                 fontWeight = FontWeight.SemiBold,
-                                color = Navy
+                                color = themeColor
                             )
 
                             Text(
@@ -2485,6 +2594,14 @@ fun FlightInfoCard(
 
             Spacer(Modifier.height(8.dp))
 
+            if (flight.taskType == "TURNAROUND") {
+                Text("Arrival Flight: ${flight.flightNo} • STA ${flight.sta.ifBlank { "—" }}")
+                Text("Departure Flight: ${flight.departureFlightNo.ifBlank { "—" }} • STD ${flight.std.ifBlank { "—" }}")
+            } else if (flight.taskType == "ARRIVAL") {
+                Text("STA: ${flight.sta.ifBlank { "—" }}")
+            } else if (flight.taskType == "DEPARTURE") {
+                Text("STD: ${flight.std.ifBlank { "—" }}")
+            }
             Text("Registration: ${flight.registration}")
             Text("Aircraft: ${flight.aircraft}")
             Text("Stand: ${flight.stand}")
