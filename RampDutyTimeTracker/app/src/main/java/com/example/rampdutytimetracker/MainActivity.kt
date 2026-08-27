@@ -65,6 +65,7 @@ data class SavedFlight(
 )
 
 private enum class AppPage {
+   SPLASH,
     HOME,
     FLIGHT_SETUP,
     ACTIVE_FLIGHT,
