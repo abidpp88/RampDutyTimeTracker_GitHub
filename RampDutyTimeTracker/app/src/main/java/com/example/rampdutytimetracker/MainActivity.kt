@@ -1245,7 +1245,80 @@ fun RampDutyApp() {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(outerPadding)
+            ) {when (page) {
+    AppPage.SPLASH -> {
+        LaunchedEffect(Unit) {
+            delay(1800)
+            page = AppPage.HOME
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0xFF061B3A),
+                            Color(0xFF0B3A78),
+                            Color(0xFF071426)
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Text("✈", style = MaterialTheme.typography.displayLarge, color = Color.White)
+
+                Spacer(Modifier.height(18.dp))
+
+                Text(
+                    "RAMP TASK",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                Text(
+                    "TIME TRACKER",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF5DB7FF)
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                Text(
+                    "SMART RAMP OPERATIONS",
+                    color = Color.White
+                )
+
+                Spacer(Modifier.height(70.dp))
+
+                Text(
+                    "Developed by",
+                    color = Color.White.copy(alpha = 0.75f)
+                )
+
+                Text(
+                    "Abid Peediyakkal",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                Spacer(Modifier.height(18.dp))
+
+                Text(
+                    "VERSION 1.0",
+                    color = Color.White.copy(alpha = 0.65f)
+                )
+            }
+        }
+    }
+
+    AppPage.HOME -> {
                 when (page) {
                     AppPage.HOME -> {
                         LazyColumn(
