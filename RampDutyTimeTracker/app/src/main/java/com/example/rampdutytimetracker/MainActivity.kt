@@ -32,6 +32,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
+import kotlinx.coroutines.delay
 import androidx.core.content.FileProvider
 import org.json.JSONArray
 import org.json.JSONObject
@@ -90,60 +93,56 @@ fun RampDutyApp() {
     val context = LocalContext.current
 
     val arrivalNames = listOf(
-        "On Block",
-        "Chocks On",
-        "Step Connected",
-        "GPU Connected",
-        "A/C Connected",
-        "Door Open",
-        "BY First Bag",
-        "BY Last Bag",
-        "BT First Bag",
-        "BT Last Bag"
-    )
-
-    val departureNames = listOf(
-        "Task Started",
-        "LIR/NOTOC Received",
-        "Cargo Received",
-        "First Bag Received",
-        "D-15 Baggage Received",
-        "Last Bag Received",
-        "Last Bag Loaded",
-        "Hold Closed",
-        "Cabin Door Closed",
-        "GPU Removed",
-        "A/C Removed",
-        "Step Removed",
-        "Off Block"
-    )
-
-    val turnaroundNames = listOf(
-        "On Block",
-        "Chocks On",
-        "Step Connected",
-        "GPU Connected",
-        "A/C Connected",
-        "Hold Open",
-        "BY First Bag",
-        "BY Last Bag",
-        "BT First Bag",
-        "BT Last Bag",
-        "LIR/NOTOC Received",
-        "Cargo Received",
-        "First Bag Received",
-        "D-10 Baggage Received",
-        "Last Bag Received",
-        "Last Bag Loaded",
-        "Hold Closed",
-        "Cabin Door Closed",
-        "GPU Removed",
-        "A/C Removed",
-        "Step Removed",
-        "Off Block"
-    )
-
-    val allKnownNames = (
+ "On Block",
+ "Chocks On",
+ "Step Start",
+ "GPU Start",
+ "A/C Start",
+ "Hold Open",
+ "BY First Bag",
+ "BY Last Bag",
+ "BT First Bag",
+ "BT Last Bag"
+ )
+ val departureNames = listOf(
+ "Task Started",
+ "LIR/NOTOC Received",
+ "Cargo Received",
+ "First Bag Received",
+ "D-15 Baggage Received",
+ "Last Bag Received",
+ "Last Bag Loaded",
+ "Hold Closed",
+ "Cabin Door Closed",
+ "GPU End",
+ "A/C End",
+ "Off Block"
+ )
+ val turnaroundNames = listOf(
+ "On Block",
+ "Chocks On",
+ "Step Start",
+ "Step End",
+ "GPU Start",
+ "GPU End",
+ "A/C Start",
+ "A/C End",
+ "Hold Open",
+ "BY First Bag",
+ "BY Last Bag",
+ "BT First Bag",
+ "BT Last Bag",
+ "LIR/NOTOC Received",
+ "Cargo Received",
+ "First Bag Received",
+ "D-15 Baggage Received",
+ "Last Bag Received",
+ "Last Bag Loaded",
+ "Hold Closed",
+ "Cabin Door Closed",
+ "Off Block"
+ )
+ val allKnownNames = (
         arrivalNames +
             departureNames +
             turnaroundNames +
@@ -159,7 +158,7 @@ fun RampDutyApp() {
             )
         ).distinct()
 
-    var page by remember { mutableStateOf(AppPage.HOME) }
+    var page by remember { mutableStateOf(AppPage.SPLASH) }
     var selectedTaskType by remember { mutableStateOf("") }
 
     var flightNo by remember { mutableStateOf("") }
@@ -1122,14 +1121,15 @@ fun RampDutyApp() {
         page = AppPage.HISTORY
     }
 
-    BackHandler(enabled = page != AppPage.HOME) {
+    BackHandler(enabled = page != AppPage.HOME && page != AppPage.SPLASH) {
         when (page) {
             AppPage.HISTORY_DETAILS -> page = AppPage.HISTORY
             AppPage.EDIT_SAVED_FLIGHT -> page = AppPage.HISTORY_DETAILS
             AppPage.ACTIVE_FLIGHT -> page = AppPage.FLIGHT_SETUP
             AppPage.FLIGHT_SETUP -> goHome()
             AppPage.HISTORY -> goHome()
-            AppPage.HOME -> Unit
+            AppPage.SPLASH -> Unit
+ AppPage.HOME -> Unit
         }
     }
 
