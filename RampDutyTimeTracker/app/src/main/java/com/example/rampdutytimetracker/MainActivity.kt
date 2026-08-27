@@ -13,13 +13,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
@@ -38,9 +40,19 @@ data class SavedFlight(
     val stand: String,
     val date: String,
     val notes: String,
+    val taskType: String,
     val timings: Map<String, String>,
     val storageIndex: Int
 )
+ 
+private enum class AppPage {
+    HOME,
+    FLIGHT_SETUP,
+    ACTIVE_FLIGHT,
+    HISTORY,
+    HISTORY_DETAILS,
+    EDIT_SAVED_FLIGHT
+}
  
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,56 +69,112 @@ fun RampDutyApp() {
  
     val context = LocalContext.current
  
+    val arrivalNames = listOf(
+        "On Block",
+        "Chocks On",
+        "Step Connected",
+        "GPU Connected",
+        "A/C Connected",
+        "Door Open",
+        "BY First Bag",
+        "BY Last Bag",
+        "BT First Bag",
+        "BT Last Bag"
+    )
+ 
+    val departureNames = listOf(
+        "Step Removed",
+        "GPU Removed",
+        "A/C Removed",
+        "Last Bag Received",
+        "Last Bag Loaded",
+        "Door Closed",
+        "Off Block"
+    )
+ 
+    val turnaroundNames = listOf(
+        "On Block",
+        "Chocks On",
+        "Step Connected",
+        "Step Removed",
+        "GPU Connected",
+        "GPU Removed",
+        "A/C Connected",
+        "A/C Removed",
+        "Door Open",
+        "Door Closed",
+        "BY First Bag",
+        "BY Last Bag",
+        "BT First Bag",
+        "BT Last Bag",
+        "Last Bag Received",
+        "Last Bag Loaded",
+        "Off Block"
+    )
+ 
+    val allKnownNames = (
+        arrivalNames +
+        departureNames +
+        turnaroundNames +
+        listOf(
+            // Old-version names retained so existing saved flights remain readable.
+            "GPU Disconnected",
+            "A/C Disconnected",
+            "Step Disconnected",
+            "BY First Baggage",
+            "BY Last Baggage",
+            "BT First Baggage",
+            "BT Last Baggage",
+            "Last Baggage Received"
+        )
+    ).distinct()
+ 
+    var page by remember { mutableStateOf(AppPage.HOME) }
+    var selectedTaskType by remember { mutableStateOf("") }
+ 
     var flightNo by remember { mutableStateOf("") }
     var registration by remember { mutableStateOf("") }
     var aircraft by remember { mutableStateOf("") }
     var stand by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
  
-    var started by remember { mutableStateOf(false) }
-    var showHistory by remember { mutableStateOf(false) }
-    var selectedFlight by remember { mutableStateOf<SavedFlight?>(null) }
+    val stamps = remember { mutableStateListOf<Stamp>() }
  
+    var selectedFlight by remember { mutableStateOf<SavedFlight?>(null) }
+    var historyRefreshKey by remember { mutableIntStateOf(0) }
     var historySearch by remember { mutableStateOf("") }
+ 
     var showMissingWarning by remember { mutableStateOf(false) }
     var missingTimings by remember { mutableStateOf<List<String>>(emptyList()) }
- 
     var flightToDelete by remember { mutableStateOf<SavedFlight?>(null) }
  
-    val names = listOf(
-        "On Block",
-        "Chocks On",
-        "GPU Connected",
-        "GPU Disconnected",
-        "A/C Connected",
-        "A/C Disconnected",
-        "Step Connected",
-        "Step Disconnected",
-        "BY First Baggage",
-        "BY Last Baggage",
-        "BT First Baggage",
-        "BT Last Baggage",
-        "Last Baggage Received",
-        "Door Closed",
-        "Off Block"
-    )
- 
-    val importantTimingNames = setOf(
-        "On Block",
-        "Chocks On",
-        "BY First Baggage",
-        "BY Last Baggage",
-        "BT First Baggage",
-        "BT Last Baggage",
-        "Last Baggage Received",
-        "Door Closed",
-        "Off Block"
-    )
- 
-    val stamps = remember {
-        mutableStateListOf<Stamp>().apply {
-            addAll(names.map { Stamp(it) })
+    fun namesForTask(taskType: String): List<String> {
+        return when (taskType.uppercase()) {
+            "ARRIVAL" -> arrivalNames
+            "DEPARTURE" -> departureNames
+            else -> turnaroundNames
         }
+    }
+ 
+    fun resetForm() {
+        flightNo = ""
+        registration = ""
+        aircraft = ""
+        stand = ""
+        notes = ""
+        stamps.clear()
+    }
+ 
+    fun startNewTask(taskType: String) {
+        selectedTaskType = taskType
+        selectedFlight = null
+        resetForm()
+        page = AppPage.FLIGHT_SETUP
+    }
+ 
+    fun initializeStampsForTask(taskType: String) {
+        stamps.clear()
+        stamps.addAll(namesForTask(taskType).map { Stamp(it) })
     }
  
     fun currentTime(): String {
@@ -118,45 +186,23 @@ fun RampDutyApp() {
  
     fun record(index: Int) {
         if (stamps[index].time == null) {
-            stamps[index] = stamps[index].copy(
-                time = currentTime()
-            )
+            stamps[index] = stamps[index].copy(time = currentTime())
         }
     }
  
-    fun reset(index: Int) {
+    fun resetStamp(index: Int) {
         stamps[index] = stamps[index].copy(time = null)
     }
  
-    fun resetCurrentFlight() {
-        flightNo = ""
-        registration = ""
-        aircraft = ""
-        stand = ""
-        notes = ""
-        started = false
- 
-        stamps.indices.forEach { index ->
-            stamps[index] = stamps[index].copy(time = null)
-        }
-    }
- 
-    fun edit(index: Int) {
- 
+    fun editStamp(index: Int) {
         val calendar = Calendar.getInstance()
         val existing = stamps[index].time
  
-        if (existing != null) {
+        if (!existing.isNullOrBlank()) {
             try {
                 val parts = existing.split(":")
-                calendar.set(
-                    Calendar.HOUR_OF_DAY,
-                    parts[0].toInt()
-                )
-                calendar.set(
-                    Calendar.MINUTE,
-                    parts[1].toInt()
-                )
+                calendar.set(Calendar.HOUR_OF_DAY, parts[0].toInt())
+                calendar.set(Calendar.MINUTE, parts[1].toInt())
             } catch (_: Exception) {
             }
         }
@@ -164,13 +210,9 @@ fun RampDutyApp() {
         TimePickerDialog(
             context,
             { _, hour, minute ->
- 
                 val second =
-                    if (
-                        existing != null &&
-                        existing.split(":").size == 3
-                    ) {
-                        existing.split(":")[2].toInt()
+                    if (!existing.isNullOrBlank() && existing.split(":").size == 3) {
+                        existing.split(":")[2].toIntOrNull() ?: 0
                     } else {
                         0
                     }
@@ -183,8 +225,7 @@ fun RampDutyApp() {
                     second
                 )
  
-                stamps[index] =
-                    stamps[index].copy(time = newTime)
+                stamps[index] = stamps[index].copy(time = newTime)
             },
             calendar.get(Calendar.HOUR_OF_DAY),
             calendar.get(Calendar.MINUTE),
@@ -192,18 +233,11 @@ fun RampDutyApp() {
         ).show()
     }
  
-    fun secondsBetween(
-        first: String?,
-        last: String?
-    ): Long? {
+    fun secondsBetween(first: String?, last: String?): Long? {
         if (first.isNullOrBlank() || last.isNullOrBlank()) return null
  
         return try {
-            val fmt = SimpleDateFormat(
-                "HH:mm:ss",
-                Locale.getDefault()
-            )
- 
+            val fmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
             val start = fmt.parse(first)!!.time
             var end = fmt.parse(last)!!.time
  
@@ -219,25 +253,245 @@ fun RampDutyApp() {
  
     fun formatDuration(seconds: Long?): String {
         if (seconds == null) return "—"
- 
         val minutes = seconds / 60
         val remainingSeconds = seconds % 60
- 
         return "$minutes min $remainingSeconds sec"
     }
  
-    fun buildFlightReport(flight: SavedFlight): String {
+    fun getTime(map: Map<String, String>, vararg keys: String): String? {
+        for (key in keys) {
+            val value = map[key]
+            if (!value.isNullOrBlank()) return value
+        }
+        return null
+    }
  
-        val onBlock = flight.timings["On Block"]
-        val offBlock = flight.timings["Off Block"]
-        val byFirst = flight.timings["BY First Baggage"]
-        val byLast = flight.timings["BY Last Baggage"]
-        val btFirst = flight.timings["BT First Baggage"]
-        val btLast = flight.timings["BT Last Baggage"]
+    fun loadHistory(): List<SavedFlight> {
+        val prefs = context.getSharedPreferences("ramp_history", 0)
+        val data = prefs.getString("flights", "[]") ?: "[]"
+        val array = JSONArray(data)
+        val list = mutableListOf<SavedFlight>()
+ 
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            val timingsObject = item.optJSONObject("timings") ?: JSONObject()
+            val timingsMap = mutableMapOf<String, String>()
+ 
+            val keys = timingsObject.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                timingsMap[key] = timingsObject.optString(key, "")
+            }
+ 
+            allKnownNames.forEach { name ->
+                if (!timingsMap.containsKey(name)) {
+                    timingsMap[name] = ""
+                }
+            }
+ 
+            var taskType = item.optString("taskType", "")
+            if (taskType.isBlank()) {
+                taskType = "TURNAROUND"
+            }
+ 
+            list.add(
+                SavedFlight(
+                    flightNo = item.optString("flightNo"),
+                    registration = item.optString("registration"),
+                    aircraft = item.optString("aircraft"),
+                    stand = item.optString("stand"),
+                    date = item.optString("date"),
+                    notes = item.optString("notes"),
+                    taskType = taskType,
+                    timings = timingsMap,
+                    storageIndex = i
+                )
+            )
+        }
+ 
+        return list.reversed()
+    }
+ 
+    fun writeFlightToJson(
+        obj: JSONObject,
+        taskType: String,
+        flightNumber: String,
+        reg: String,
+        aircraftType: String,
+        standNumber: String,
+        dateText: String,
+        notesText: String,
+        stampList: List<Stamp>
+    ) {
+        obj.put("flightNo", flightNumber)
+        obj.put("registration", reg)
+        obj.put("aircraft", aircraftType)
+        obj.put("stand", standNumber)
+        obj.put("date", dateText)
+        obj.put("notes", notesText)
+        obj.put("taskType", taskType)
+ 
+        val timings = JSONObject()
+        stampList.forEach {
+            timings.put(it.name, it.time ?: "")
+        }
+        obj.put("timings", timings)
+    }
+ 
+    fun saveNewFlight() {
+        val prefs = context.getSharedPreferences("ramp_history", 0)
+        val oldData = prefs.getString("flights", "[]") ?: "[]"
+        val array = JSONArray(oldData)
+        val obj = JSONObject()
+ 
+        val dateText = SimpleDateFormat(
+            "dd/MM/yyyy HH:mm",
+            Locale.getDefault()
+        ).format(Date())
+ 
+        writeFlightToJson(
+            obj = obj,
+            taskType = selectedTaskType,
+            flightNumber = flightNo,
+            reg = registration,
+            aircraftType = aircraft,
+            standNumber = stand,
+            dateText = dateText,
+            notesText = notes,
+            stampList = stamps
+        )
+ 
+        array.put(obj)
+ 
+        prefs.edit()
+            .putString("flights", array.toString())
+            .apply()
+ 
+        Toast.makeText(
+            context,
+            "Flight Saved Successfully",
+            Toast.LENGTH_SHORT
+        ).show()
+ 
+        resetForm()
+        selectedTaskType = ""
+        page = AppPage.HOME
+        historyRefreshKey++
+    }
+ 
+    fun updateSavedFlight() {
+        val original = selectedFlight ?: return
+        val prefs = context.getSharedPreferences("ramp_history", 0)
+        val oldData = prefs.getString("flights", "[]") ?: "[]"
+        val array = JSONArray(oldData)
+ 
+        if (original.storageIndex !in 0 until array.length()) {
+            Toast.makeText(
+                context,
+                "Unable to update this flight",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+ 
+        val updated = JSONObject()
+ 
+        writeFlightToJson(
+            obj = updated,
+            taskType = selectedTaskType,
+            flightNumber = flightNo,
+            reg = registration,
+            aircraftType = aircraft,
+            standNumber = stand,
+            dateText = original.date,
+            notesText = notes,
+            stampList = stamps
+        )
+ 
+        array.put(original.storageIndex, updated)
+ 
+        prefs.edit()
+            .putString("flights", array.toString())
+            .apply()
+ 
+        Toast.makeText(
+            context,
+            "Flight Updated Successfully",
+            Toast.LENGTH_SHORT
+        ).show()
+ 
+        selectedFlight = SavedFlight(
+            flightNo = flightNo,
+            registration = registration,
+            aircraft = aircraft,
+            stand = stand,
+            date = original.date,
+            notes = notes,
+            taskType = selectedTaskType,
+            timings = stamps.associate { it.name to (it.time ?: "") },
+            storageIndex = original.storageIndex
+        )
+ 
+        historyRefreshKey++
+        page = AppPage.HISTORY_DETAILS
+    }
+ 
+    fun deleteFlight(flight: SavedFlight) {
+        val prefs = context.getSharedPreferences("ramp_history", 0)
+        val data = prefs.getString("flights", "[]") ?: "[]"
+        val array = JSONArray(data)
+ 
+        if (flight.storageIndex in 0 until array.length()) {
+            array.remove(flight.storageIndex)
+ 
+            prefs.edit()
+                .putString("flights", array.toString())
+                .apply()
+ 
+            Toast.makeText(
+                context,
+                "Flight deleted",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+ 
+        flightToDelete = null
+        selectedFlight = null
+        historyRefreshKey++
+        page = AppPage.HISTORY
+    }
+ 
+    fun buildFlightReport(flight: SavedFlight): String {
+        val visibleNames = namesForTask(flight.taskType)
+ 
+        val onBlock = getTime(flight.timings, "On Block")
+        val offBlock = getTime(flight.timings, "Off Block")
+ 
+        val byFirst = getTime(
+            flight.timings,
+            "BY First Bag",
+            "BY First Baggage"
+        )
+        val byLast = getTime(
+            flight.timings,
+            "BY Last Bag",
+            "BY Last Baggage"
+        )
+        val btFirst = getTime(
+            flight.timings,
+            "BT First Bag",
+            "BT First Baggage"
+        )
+        val btLast = getTime(
+            flight.timings,
+            "BT Last Bag",
+            "BT Last Baggage"
+        )
  
         return buildString {
             appendLine("Ramp Duty Time Tracker")
             appendLine()
+            appendLine("Task: ${flight.taskType}")
             appendLine("Flight: ${flight.flightNo}")
             appendLine("Registration: ${flight.registration}")
             appendLine("Aircraft: ${flight.aircraft}")
@@ -245,39 +499,40 @@ fun RampDutyApp() {
             appendLine("Date: ${flight.date}")
             appendLine()
             appendLine("Recorded Timings")
-            names.forEach { name ->
+ 
+            visibleNames.forEach { name ->
                 val time = flight.timings[name]
                     ?.takeIf { it.isNotBlank() }
                     ?: "—"
                 appendLine("$name: $time")
             }
-            appendLine()
-            appendLine(
-                "Turnaround: ${
-                    formatDuration(
-                        secondsBetween(onBlock, offBlock)
-                    )
-                }"
-            )
-            appendLine(
-                "Local (BY) delivery: ${
-                    formatDuration(
-                        secondsBetween(byFirst, byLast)
-                    )
-                }"
-            )
-            appendLine(
-                "Transfer (BT) delivery: ${
-                    formatDuration(
-                        secondsBetween(btFirst, btLast)
-                    )
-                }"
-            )
+ 
+            if (flight.taskType == "ARRIVAL" || flight.taskType == "TURNAROUND") {
+                appendLine()
+                appendLine(
+                    "Local (BY) delivery: ${
+                        formatDuration(secondsBetween(byFirst, byLast))
+                    }"
+                )
+                appendLine(
+                    "Transfer (BT) delivery: ${
+                        formatDuration(secondsBetween(btFirst, btLast))
+                    }"
+                )
+            }
+ 
+            if (flight.taskType == "TURNAROUND") {
+                appendLine(
+                    "Turnaround: ${
+                        formatDuration(secondsBetween(onBlock, offBlock))
+                    }"
+                )
+            }
+ 
             appendLine()
             appendLine(
                 "Notes: ${
-                    flight.notes.takeIf { it.isNotBlank() }
-                        ?: "No notes"
+                    flight.notes.takeIf { it.isNotBlank() } ?: "No notes"
                 }"
             )
         }
@@ -285,16 +540,14 @@ fun RampDutyApp() {
  
     fun copyFlightReport(flight: SavedFlight) {
         val clipboard =
-            context.getSystemService(
-                Context.CLIPBOARD_SERVICE
-            ) as ClipboardManager
+            context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
  
-        val clip = ClipData.newPlainText(
-            "Flight Report",
-            buildFlightReport(flight)
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "Flight Report",
+                buildFlightReport(flight)
+            )
         )
- 
-        clipboard.setPrimaryClip(clip)
  
         Toast.makeText(
             context,
@@ -304,7 +557,6 @@ fun RampDutyApp() {
     }
  
     fun shareFlightReport(flight: SavedFlight) {
- 
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(
@@ -318,198 +570,73 @@ fun RampDutyApp() {
         }
  
         context.startActivity(
-            Intent.createChooser(
-                intent,
-                "Share Flight Report"
-            )
+            Intent.createChooser(intent, "Share Flight Report")
         )
     }
  
-    fun saveFlight() {
+    fun prepareEdit(flight: SavedFlight) {
+        selectedFlight = flight
+        selectedTaskType = flight.taskType
+        flightNo = flight.flightNo
+        registration = flight.registration
+        aircraft = flight.aircraft
+        stand = flight.stand
+        notes = flight.notes
  
-        val prefs = context.getSharedPreferences(
-            "ramp_history",
-            0
-        )
- 
-        val oldData = prefs.getString(
-            "flights",
-            "[]"
-        ) ?: "[]"
- 
-        val array = JSONArray(oldData)
-        val obj = JSONObject()
- 
-        obj.put("flightNo", flightNo)
-        obj.put("registration", registration)
-        obj.put("aircraft", aircraft)
-        obj.put("stand", stand)
- 
-        obj.put(
-            "date",
-            SimpleDateFormat(
-                "dd/MM/yyyy HH:mm",
-                Locale.getDefault()
-            ).format(Date())
-        )
- 
-        obj.put("notes", notes)
- 
-        val timings = JSONObject()
- 
-        stamps.forEach {
-            timings.put(
-                it.name,
-                it.time ?: ""
-            )
-        }
- 
-        obj.put("timings", timings)
-        array.put(obj)
- 
-        prefs.edit()
-            .putString(
-                "flights",
-                array.toString()
-            )
-            .apply()
- 
-        Toast.makeText(
-            context,
-            "Flight Saved Successfully",
-            Toast.LENGTH_SHORT
-        ).show()
- 
-        resetCurrentFlight()
-        selectedFlight = null
-        showHistory = false
-    }
- 
-    fun loadHistory(): List<SavedFlight> {
- 
-        val prefs = context.getSharedPreferences(
-            "ramp_history",
-            0
-        )
- 
-        val data = prefs.getString(
-            "flights",
-            "[]"
-        ) ?: "[]"
- 
-        val array = JSONArray(data)
-        val list = mutableListOf<SavedFlight>()
- 
-        for (i in 0 until array.length()) {
- 
-            val item = array.getJSONObject(i)
- 
-            val timingsObject =
-                item.optJSONObject("timings") ?: JSONObject()
- 
-            val timingsMap = mutableMapOf<String, String>()
- 
-            names.forEach { name ->
-                timingsMap[name] =
-                    timingsObject.optString(name, "")
+        stamps.clear()
+        stamps.addAll(
+            namesForTask(flight.taskType).map { name ->
+                Stamp(
+                    name = name,
+                    time = flight.timings[name]
+                        ?.takeIf { it.isNotBlank() }
+                )
             }
- 
-            list.add(
-                SavedFlight(
-                    flightNo = item.optString("flightNo"),
-                    registration = item.optString("registration"),
-                    aircraft = item.optString("aircraft"),
-                    stand = item.optString("stand"),
-                    date = item.optString("date"),
-                    notes = item.optString("notes"),
-                    timings = timingsMap,
-                    storageIndex = i
-                )
-            )
-        }
- 
-        return list.reversed()
-    }
- 
-    fun deleteFlight(flight: SavedFlight) {
- 
-        val prefs = context.getSharedPreferences(
-            "ramp_history",
-            0
         )
  
-        val data = prefs.getString(
-            "flights",
-            "[]"
-        ) ?: "[]"
- 
-        val array = JSONArray(data)
- 
-        if (
-            flight.storageIndex >= 0 &&
-            flight.storageIndex < array.length()
-        ) {
-            array.remove(flight.storageIndex)
- 
-            prefs.edit()
-                .putString(
-                    "flights",
-                    array.toString()
-                )
-                .apply()
- 
-            Toast.makeText(
-                context,
-                "Flight deleted",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
- 
-        selectedFlight = null
-        flightToDelete = null
-        showHistory = true
+        page = AppPage.EDIT_SAVED_FLIGHT
     }
  
-    fun checkAndSaveFlight() {
- 
+    fun checkMissingAndSave(isUpdate: Boolean) {
         val missing = stamps
-            .filter {
-                it.name in importantTimingNames &&
-                it.time.isNullOrBlank()
-            }
+            .filter { it.time.isNullOrBlank() }
             .map { it.name }
  
         if (missing.isEmpty()) {
-            saveFlight()
+            if (isUpdate) updateSavedFlight() else saveNewFlight()
         } else {
             missingTimings = missing
             showMissingWarning = true
         }
     }
  
+    fun goHome() {
+        selectedFlight = null
+        selectedTaskType = ""
+        resetForm()
+        page = AppPage.HOME
+    }
+ 
+    fun goHistory() {
+        selectedFlight = null
+        historySearch = ""
+        page = AppPage.HISTORY
+    }
+ 
     BackHandler(
-        enabled =
-            selectedFlight != null ||
-            showHistory ||
-            started
+        enabled = page != AppPage.HOME
     ) {
-        when {
-            selectedFlight != null -> {
-                selectedFlight = null
-            }
- 
-            showHistory -> {
-                showHistory = false
-            }
- 
-            started -> {
-                started = false
-            }
+        when (page) {
+            AppPage.HISTORY_DETAILS -> page = AppPage.HISTORY
+            AppPage.EDIT_SAVED_FLIGHT -> page = AppPage.HISTORY_DETAILS
+            AppPage.ACTIVE_FLIGHT -> page = AppPage.FLIGHT_SETUP
+            AppPage.FLIGHT_SETUP -> goHome()
+            AppPage.HISTORY -> goHome()
+            AppPage.HOME -> Unit
         }
     }
  
     if (showMissingWarning) {
- 
         AlertDialog(
             onDismissRequest = {
                 showMissingWarning = false
@@ -521,14 +648,18 @@ fun RampDutyApp() {
                 Text(
                     "Missing: ${
                         missingTimings.joinToString(", ")
-                    }\n\nSave this flight anyway?"
+                    }\n\nSave anyway?"
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showMissingWarning = false
-                        saveFlight()
+                        if (page == AppPage.EDIT_SAVED_FLIGHT) {
+                            updateSavedFlight()
+                        } else {
+                            saveNewFlight()
+                        }
                     }
                 ) {
                     Text("SAVE ANYWAY")
@@ -547,7 +678,6 @@ fun RampDutyApp() {
     }
  
     flightToDelete?.let { flight ->
- 
         AlertDialog(
             onDismissRequest = {
                 flightToDelete = null
@@ -583,441 +713,568 @@ fun RampDutyApp() {
  
     MaterialTheme {
  
-        when {
- 
-            selectedFlight != null -> {
- 
-                val flight = selectedFlight!!
- 
-                val onBlock =
-                    flight.timings["On Block"]
- 
-                val offBlock =
-                    flight.timings["Off Block"]
- 
-                val byFirst =
-                    flight.timings["BY First Baggage"]
- 
-                val byLast =
-                    flight.timings["BY Last Baggage"]
- 
-                val btFirst =
-                    flight.timings["BT First Baggage"]
- 
-                val btLast =
-                    flight.timings["BT Last Baggage"]
- 
-                Scaffold(
-                    topBar = {
-                        TopAppBar(
-                            title = {
-                                Text("Flight Details")
-                            },
-                            navigationIcon = {
-                                IconButton(
-                                    onClick = {
-                                        selectedFlight = null
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector =
-                                            Icons.Default.ArrowBack,
-                                        contentDescription =
-                                            "Back"
-                                    )
-                                }
-                            }
-                        )
-                    }
-                ) { padding ->
- 
-                    LazyColumn(
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .padding(padding)
-                                .padding(16.dp),
-                        verticalArrangement =
-                            Arrangement.spacedBy(10.dp)
-                    ) {
- 
-                        item {
- 
-                            Card(
-                                modifier =
-                                    Modifier.fillMaxWidth()
-                            ) {
- 
-                                Column(
-                                    modifier =
-                                        Modifier.padding(16.dp)
-                                ) {
- 
-                                    Text(
-                                        flight.flightNo,
-                                        style =
-                                            MaterialTheme
-                                                .typography
-                                                .titleLarge
-                                    )
- 
-                                    Spacer(
-                                        Modifier.height(6.dp)
-                                    )
- 
-                                    Text(
-                                        "Registration: ${flight.registration}"
-                                    )
- 
-                                    Text(
-                                        "Aircraft: ${flight.aircraft}"
-                                    )
- 
-                                    Text(
-                                        "Stand: ${flight.stand}"
-                                    )
- 
-                                    Text(
-                                        "Date: ${flight.date}"
-                                    )
-                                }
-                            }
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = page in listOf(
+                            AppPage.HOME,
+                            AppPage.FLIGHT_SETUP,
+                            AppPage.ACTIVE_FLIGHT
+                        ),
+                        onClick = {
+                            goHome()
+                        },
+                        icon = {
+                            Text("⌂")
+                        },
+                        label = {
+                            Text("Home")
                         }
+                    )
  
-                        item {
-                            Text(
-                                "Recorded Timings",
-                                style =
-                                    MaterialTheme
-                                        .typography
-                                        .titleLarge
-                            )
+                    NavigationBarItem(
+                        selected = page in listOf(
+                            AppPage.HISTORY,
+                            AppPage.HISTORY_DETAILS,
+                            AppPage.EDIT_SAVED_FLIGHT
+                        ),
+                        onClick = {
+                            goHistory()
+                        },
+                        icon = {
+                            Text("≡")
+                        },
+                        label = {
+                            Text("History")
                         }
- 
-                        itemsIndexed(names) {
-                                _,
-                                name ->
- 
-                            val isImportant =
-                                name in importantTimingNames
- 
-                            Card(
-                                modifier =
-                                    Modifier.fillMaxWidth(),
-                                colors =
-                                    CardDefaults.cardColors(
-                                        containerColor =
-                                            if (isImportant) {
-                                                MaterialTheme
-                                                    .colorScheme
-                                                    .secondaryContainer
-                                            } else {
-                                                MaterialTheme
-                                                    .colorScheme
-                                                    .surfaceVariant
-                                            }
-                                    )
-                            ) {
-                                Row(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                    horizontalArrangement =
-                                        Arrangement.SpaceBetween
-                                ) {
- 
-                                    Text(
-                                        name,
-                                        modifier =
-                                            Modifier.weight(1f)
-                                    )
- 
-                                    Text(
-                                        flight.timings[name]
-                                            ?.takeIf {
-                                                it.isNotBlank()
-                                            }
-                                            ?: "—"
-                                    )
-                                }
-                            }
-                        }
- 
-                        item {
- 
-                            Spacer(
-                                Modifier.height(4.dp)
-                            )
- 
-                            Text(
-                                "Automatic Timings",
-                                style =
-                                    MaterialTheme
-                                        .typography
-                                        .titleLarge
-                            )
- 
-                            Spacer(
-                                Modifier.height(8.dp)
-                            )
- 
-                            Text(
-                                "Turnaround: ${
-                                    formatDuration(
-                                        secondsBetween(
-                                            onBlock,
-                                            offBlock
-                                        )
-                                    )
-                                }"
-                            )
- 
-                            Text(
-                                "Local (BY) delivery: ${
-                                    formatDuration(
-                                        secondsBetween(
-                                            byFirst,
-                                            byLast
-                                        )
-                                    )
-                                }"
-                            )
- 
-                            Text(
-                                "Transfer (BT) delivery: ${
-                                    formatDuration(
-                                        secondsBetween(
-                                            btFirst,
-                                            btLast
-                                        )
-                                    )
-                                }"
-                            )
- 
-                            Spacer(
-                                Modifier.height(14.dp)
-                            )
- 
-                            Text(
-                                "Notes",
-                                style =
-                                    MaterialTheme
-                                        .typography
-                                        .titleLarge
-                            )
- 
-                            Spacer(
-                                Modifier.height(6.dp)
-                            )
- 
-                            Text(
-                                flight.notes
-                                    .takeIf {
-                                        it.isNotBlank()
-                                    }
-                                    ?: "No notes"
-                            )
- 
-                            Spacer(
-                                Modifier.height(16.dp)
-                            )
- 
-                            Button(
-                                onClick = {
-                                    shareFlightReport(flight)
-                                },
-                                modifier =
-                                    Modifier.fillMaxWidth()
-                            ) {
-                                Text("SHARE FLIGHT REPORT")
-                            }
- 
-                            OutlinedButton(
-                                onClick = {
-                                    copyFlightReport(flight)
-                                },
-                                modifier =
-                                    Modifier.fillMaxWidth()
-                            ) {
-                                Text("COPY FLIGHT DETAILS")
-                            }
- 
-                            OutlinedButton(
-                                onClick = {
-                                    flightToDelete = flight
-                                },
-                                modifier =
-                                    Modifier.fillMaxWidth()
-                            ) {
-                                Text("DELETE FLIGHT")
-                            }
-                        }
-                    }
+                    )
                 }
             }
+        ) { outerPadding ->
  
-            showHistory -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(outerPadding)
+            ) {
  
-                val history = loadHistory()
+                when (page) {
  
-                val filteredHistory =
-                    if (historySearch.isBlank()) {
-                        history
-                    } else {
-                        val query =
-                            historySearch.trim().lowercase()
+                    AppPage.HOME -> {
  
-                        history.filter { flight ->
-                            flight.flightNo
-                                .lowercase()
-                                .contains(query) ||
-                            flight.registration
-                                .lowercase()
-                                .contains(query) ||
-                            flight.aircraft
-                                .lowercase()
-                                .contains(query) ||
-                            flight.stand
-                                .lowercase()
-                                .contains(query) ||
-                            flight.date
-                                .lowercase()
-                                .contains(query)
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 20.dp),
+                            contentPadding = PaddingValues(
+                                top = 28.dp,
+                                bottom = 28.dp
+                            ),
+                            verticalArrangement =
+                                Arrangement.spacedBy(16.dp)
+                        ) {
+ 
+                            item {
+                                Text(
+                                    "Ramp Duty",
+                                    style =
+                                        MaterialTheme
+                                            .typography
+                                            .headlineLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+ 
+                                Text(
+                                    "Time Tracker",
+                                    style =
+                                        MaterialTheme
+                                            .typography
+                                            .titleLarge,
+                                    color =
+                                        MaterialTheme
+                                            .colorScheme
+                                            .primary
+                                )
+ 
+                                Spacer(
+                                    Modifier.height(6.dp)
+                                )
+ 
+                                Text(
+                                    "Select your operation",
+                                    style =
+                                        MaterialTheme
+                                            .typography
+                                            .bodyLarge
+                                )
+ 
+                                Spacer(
+                                    Modifier.height(12.dp)
+                                )
+                            }
+ 
+                            item {
+                                OperationCard(
+                                    title = "ARRIVAL",
+                                    subtitle = "Arrival handling timings",
+                                    symbol = "✈",
+                                    onClick = {
+                                        startNewTask("ARRIVAL")
+                                    }
+                                )
+                            }
+ 
+                            item {
+                                OperationCard(
+                                    title = "DEPARTURE",
+                                    subtitle = "Departure handling timings",
+                                    symbol = "↗",
+                                    onClick = {
+                                        startNewTask("DEPARTURE")
+                                    }
+                                )
+                            }
+ 
+                            item {
+                                OperationCard(
+                                    title = "TURNAROUND",
+                                    subtitle = "Complete arrival + departure",
+                                    symbol = "↻",
+                                    onClick = {
+                                        startNewTask("TURNAROUND")
+                                    }
+                                )
+                            }
                         }
                     }
  
-                Scaffold(
-                    topBar = {
-                        TopAppBar(
-                            title = {
-                                Text("Flight History")
-                            },
-                            navigationIcon = {
-                                IconButton(
-                                    onClick = {
-                                        showHistory = false
+                    AppPage.FLIGHT_SETUP -> {
+ 
+                        Scaffold(
+                            topBar = {
+                                TopAppBar(
+                                    title = {
+                                        Text(selectedTaskType)
+                                    },
+                                    navigationIcon = {
+                                        IconButton(
+                                            onClick = {
+                                                goHome()
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.ArrowBack,
+                                                contentDescription = "Back"
+                                            )
+                                        }
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector =
-                                            Icons.Default.ArrowBack,
-                                        contentDescription =
-                                            "Back"
-                                    )
-                                }
-                            }
-                        )
-                    }
-                ) { padding ->
- 
-                    Column(
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .padding(padding)
-                                .padding(16.dp)
-                    ) {
- 
-                        OutlinedTextField(
-                            value = historySearch,
-                            onValueChange = {
-                                historySearch = it
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            label = {
-                                Text(
-                                    "Search flight, registration, date..."
                                 )
-                            },
-                            singleLine = true
-                        )
- 
-                        Spacer(
-                            Modifier.height(12.dp)
-                        )
- 
-                        if (history.isEmpty()) {
- 
-                            Text(
-                                "No saved flights yet."
-                            )
- 
-                        } else if (
-                            filteredHistory.isEmpty()
-                        ) {
- 
-                            Text(
-                                "No matching flights found."
-                            )
- 
-                        } else {
+                            }
+                        ) { padding ->
  
                             LazyColumn(
-                                modifier =
-                                    Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(padding)
+                                    .padding(horizontal = 18.dp),
+                                contentPadding = PaddingValues(
+                                    top = 12.dp,
+                                    bottom = 24.dp
+                                ),
                                 verticalArrangement =
-                                    Arrangement.spacedBy(10.dp)
+                                    Arrangement.spacedBy(12.dp)
                             ) {
  
-                                itemsIndexed(
-                                    filteredHistory
-                                ) {
-                                        _,
-                                        flight ->
+                                item {
+                                    TaskBadge(selectedTaskType)
+                                }
  
-                                    Card(
+                                item {
+                                    OutlinedTextField(
+                                        value = flightNo,
+                                        onValueChange = {
+                                            flightNo = it
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        label = {
+                                            Text("Flight Number")
+                                        },
+                                        singleLine = true
+                                    )
+                                }
+ 
+                                item {
+                                    OutlinedTextField(
+                                        value = registration,
+                                        onValueChange = {
+                                            registration = it
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        label = {
+                                            Text(
+                                                "Aircraft Registration"
+                                            )
+                                        },
+                                        singleLine = true
+                                    )
+                                }
+ 
+                                item {
+                                    OutlinedTextField(
+                                        value = aircraft,
+                                        onValueChange = {
+                                            aircraft = it
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        label = {
+                                            Text("Aircraft Type")
+                                        },
+                                        singleLine = true
+                                    )
+                                }
+ 
+                                item {
+                                    OutlinedTextField(
+                                        value = stand,
+                                        onValueChange = {
+                                            stand = it
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        label = {
+                                            Text("Stand")
+                                        },
+                                        singleLine = true
+                                    )
+                                }
+ 
+                                item {
+                                    Button(
+                                        onClick = {
+                                            initializeStampsForTask(
+                                                selectedTaskType
+                                            )
+                                            page =
+                                                AppPage.ACTIVE_FLIGHT
+                                        },
+                                        enabled =
+                                            flightNo.isNotBlank() &&
+                                            registration.isNotBlank() &&
+                                            aircraft.isNotBlank() &&
+                                            stand.isNotBlank(),
                                         modifier =
                                             Modifier
                                                 .fillMaxWidth()
-                                                .clickable {
-                                                    selectedFlight =
-                                                        flight
-                                                }
+                                                .height(54.dp)
                                     ) {
+                                        Text("START FLIGHT")
+                                    }
+                                }
+                            }
+                        }
+                    }
  
-                                        Column(
-                                            modifier =
-                                                Modifier.padding(
-                                                    16.dp
-                                                )
-                                        ) {
+                    AppPage.ACTIVE_FLIGHT -> {
  
+                        Scaffold(
+                            topBar = {
+                                TopAppBar(
+                                    title = {
+                                        Column {
                                             Text(
-                                                flight.flightNo,
+                                                selectedTaskType
+                                            )
+                                            Text(
+                                                "$flightNo • Stand $stand",
                                                 style =
                                                     MaterialTheme
                                                         .typography
-                                                        .titleLarge
+                                                        .labelMedium
                                             )
- 
-                                            Spacer(
-                                                Modifier.height(4.dp)
+                                        }
+                                    },
+                                    navigationIcon = {
+                                        IconButton(
+                                            onClick = {
+                                                page =
+                                                    AppPage.FLIGHT_SETUP
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.ArrowBack,
+                                                contentDescription = "Back"
                                             )
+                                        }
+                                    }
+                                )
+                            }
+                        ) { padding ->
  
-                                            Text(
-                                                "Registration: ${flight.registration}"
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(padding)
+                                    .padding(horizontal = 14.dp),
+                                contentPadding = PaddingValues(
+                                    top = 10.dp,
+                                    bottom = 24.dp
+                                ),
+                                verticalArrangement =
+                                    Arrangement.spacedBy(9.dp)
+                            ) {
+ 
+                                items(
+                                    stamps,
+                                    key = { it.name }
+                                ) { stamp ->
+ 
+                                    val index =
+                                        stamps.indexOfFirst {
+                                            it.name == stamp.name
+                                        }
+ 
+                                    TimingCard(
+                                        stamp = stamp,
+                                        onRecord = {
+                                            record(index)
+                                        },
+                                        onEdit = {
+                                            editStamp(index)
+                                        },
+                                        onReset = {
+                                            resetStamp(index)
+                                        }
+                                    )
+                                }
+ 
+                                item {
+ 
+                                    val timingMap =
+                                        stamps.associate {
+                                            it.name to (it.time ?: "")
+                                        }
+ 
+                                    val onBlock =
+                                        getTime(
+                                            timingMap,
+                                            "On Block"
+                                        )
+ 
+                                    val offBlock =
+                                        getTime(
+                                            timingMap,
+                                            "Off Block"
+                                        )
+ 
+                                    val byFirst =
+                                        getTime(
+                                            timingMap,
+                                            "BY First Bag"
+                                        )
+ 
+                                    val byLast =
+                                        getTime(
+                                            timingMap,
+                                            "BY Last Bag"
+                                        )
+ 
+                                    val btFirst =
+                                        getTime(
+                                            timingMap,
+                                            "BT First Bag"
+                                        )
+ 
+                                    val btLast =
+                                        getTime(
+                                            timingMap,
+                                            "BT Last Bag"
+                                        )
+ 
+                                    SummaryCard(
+                                        taskType = selectedTaskType,
+                                        turnaround =
+                                            formatDuration(
+                                                secondsBetween(
+                                                    onBlock,
+                                                    offBlock
+                                                )
+                                            ),
+                                        localDelivery =
+                                            formatDuration(
+                                                secondsBetween(
+                                                    byFirst,
+                                                    byLast
+                                                )
+                                            ),
+                                        transferDelivery =
+                                            formatDuration(
+                                                secondsBetween(
+                                                    btFirst,
+                                                    btLast
+                                                )
                                             )
+                                    )
+                                }
  
-                                            Text(
-                                                "Aircraft: ${flight.aircraft}"
+                                item {
+                                    OutlinedTextField(
+                                        value = notes,
+                                        onValueChange = {
+                                            notes = it
+                                        },
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .height(120.dp),
+                                        label = {
+                                            Text("Notes")
+                                        }
+                                    )
+                                }
+ 
+                                item {
+                                    Button(
+                                        onClick = {
+                                            checkMissingAndSave(
+                                                isUpdate = false
                                             )
+                                        },
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .height(54.dp)
+                                    ) {
+                                        Text("SAVE FLIGHT")
+                                    }
+                                }
+                            }
+                        }
+                    }
  
-                                            Text(
-                                                "Stand: ${flight.stand}"
+                    AppPage.HISTORY -> {
+ 
+                        val history = remember(
+                            historyRefreshKey
+                        ) {
+                            loadHistory()
+                        }
+ 
+                        val filteredHistory =
+                            if (historySearch.isBlank()) {
+                                history
+                            } else {
+                                val query =
+                                    historySearch
+                                        .trim()
+                                        .lowercase()
+ 
+                                history.filter { flight ->
+                                    flight.flightNo
+                                        .lowercase()
+                                        .contains(query) ||
+                                    flight.registration
+                                        .lowercase()
+                                        .contains(query) ||
+                                    flight.aircraft
+                                        .lowercase()
+                                        .contains(query) ||
+                                    flight.stand
+                                        .lowercase()
+                                        .contains(query) ||
+                                    flight.date
+                                        .lowercase()
+                                        .contains(query) ||
+                                    flight.taskType
+                                        .lowercase()
+                                        .contains(query)
+                                }
+                            }
+ 
+                        Scaffold(
+                            topBar = {
+                                TopAppBar(
+                                    title = {
+                                        Text("Flight History")
+                                    }
+                                )
+                            }
+                        ) { padding ->
+ 
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(padding)
+                                    .padding(horizontal = 16.dp)
+                            ) {
+ 
+                                OutlinedTextField(
+                                    value = historySearch,
+                                    onValueChange = {
+                                        historySearch = it
+                                    },
+                                    modifier =
+                                        Modifier.fillMaxWidth(),
+                                    label = {
+                                        Text(
+                                            "Search flight, reg, date..."
+                                        )
+                                    },
+                                    singleLine = true
+                                )
+ 
+                                Spacer(
+                                    Modifier.height(12.dp)
+                                )
+ 
+                                if (history.isEmpty()) {
+ 
+                                    Text(
+                                        "No saved flights yet."
+                                    )
+ 
+                                } else if (
+                                    filteredHistory.isEmpty()
+                                ) {
+ 
+                                    Text(
+                                        "No matching flights found."
+                                    )
+ 
+                                } else {
+ 
+                                    LazyColumn(
+                                        modifier =
+                                            Modifier.fillMaxSize(),
+                                        contentPadding =
+                                            PaddingValues(
+                                                bottom = 20.dp
+                                            ),
+                                        verticalArrangement =
+                                            Arrangement.spacedBy(
+                                                10.dp
                                             )
+                                    ) {
  
-                                            Text(
-                                                "Date: ${flight.date}"
-                                            )
+                                        items(
+                                            filteredHistory,
+                                            key = {
+                                                "${it.storageIndex}-${it.date}"
+                                            }
+                                        ) { flight ->
  
-                                            Spacer(
-                                                Modifier.height(8.dp)
-                                            )
- 
-                                            Text(
-                                                "Tap to view full details"
+                                            HistoryFlightCard(
+                                                flight = flight,
+                                                onClick = {
+                                                    selectedFlight =
+                                                        flight
+                                                    page =
+                                                        AppPage
+                                                            .HISTORY_DETAILS
+                                                }
                                             )
                                         }
                                     }
@@ -1025,382 +1282,787 @@ fun RampDutyApp() {
                             }
                         }
                     }
-                }
-            }
  
-            else -> {
+                    AppPage.HISTORY_DETAILS -> {
  
-                Scaffold(
-                    topBar = {
-                        TopAppBar(
-                            title = {
-                                Text(
-                                    "Ramp Duty Time Tracker"
-                                )
-                            },
-                            actions = {
+                        val flight = selectedFlight
  
-                                TextButton(
-                                    onClick = {
-                                        showHistory = true
-                                    }
-                                ) {
-                                    Text("HISTORY")
-                                }
-                            }
-                        )
-                    }
-                ) { pad ->
+                        if (flight == null) {
+                            page = AppPage.HISTORY
+                        } else {
  
-                    LazyColumn(
-                        modifier =
-                            Modifier
-                                .padding(pad)
-                                .padding(16.dp),
-                        verticalArrangement =
-                            Arrangement.spacedBy(10.dp)
-                    ) {
- 
-                        item {
- 
-                            if (!started) {
- 
-                                OutlinedTextField(
-                                    value = flightNo,
-                                    onValueChange = {
-                                        flightNo = it
-                                    },
-                                    modifier =
-                                        Modifier.fillMaxWidth(),
-                                    label = {
-                                        Text("Flight Number")
-                                    }
+                            val visibleNames =
+                                namesForTask(
+                                    flight.taskType
                                 )
  
-                                Spacer(
-                                    Modifier.height(8.dp)
+                            val onBlock =
+                                getTime(
+                                    flight.timings,
+                                    "On Block"
                                 )
  
-                                OutlinedTextField(
-                                    value = registration,
-                                    onValueChange = {
-                                        registration = it
-                                    },
-                                    modifier =
-                                        Modifier.fillMaxWidth(),
-                                    label = {
-                                        Text(
-                                            "Aircraft Registration"
-                                        )
-                                    }
+                            val offBlock =
+                                getTime(
+                                    flight.timings,
+                                    "Off Block"
                                 )
  
-                                Spacer(
-                                    Modifier.height(8.dp)
+                            val byFirst =
+                                getTime(
+                                    flight.timings,
+                                    "BY First Bag",
+                                    "BY First Baggage"
                                 )
  
-                                OutlinedTextField(
-                                    value = aircraft,
-                                    onValueChange = {
-                                        aircraft = it
-                                    },
-                                    modifier =
-                                        Modifier.fillMaxWidth(),
-                                    label = {
-                                        Text("Aircraft Type")
-                                    }
+                            val byLast =
+                                getTime(
+                                    flight.timings,
+                                    "BY Last Bag",
+                                    "BY Last Baggage"
                                 )
  
-                                Spacer(
-                                    Modifier.height(8.dp)
+                            val btFirst =
+                                getTime(
+                                    flight.timings,
+                                    "BT First Bag",
+                                    "BT First Baggage"
                                 )
  
-                                OutlinedTextField(
-                                    value = stand,
-                                    onValueChange = {
-                                        stand = it
-                                    },
-                                    modifier =
-                                        Modifier.fillMaxWidth(),
-                                    label = {
-                                        Text("Stand")
-                                    }
+                            val btLast =
+                                getTime(
+                                    flight.timings,
+                                    "BT Last Bag",
+                                    "BT Last Baggage"
                                 )
  
-                                Spacer(
-                                    Modifier.height(12.dp)
-                                )
- 
-                                Button(
-                                    onClick = {
-                                        started = true
-                                    },
-                                    enabled =
-                                        flightNo.isNotBlank() &&
-                                        registration.isNotBlank() &&
-                                        aircraft.isNotBlank() &&
-                                        stand.isNotBlank(),
-                                    modifier =
-                                        Modifier.fillMaxWidth()
-                                ) {
-                                    Text("START FLIGHT")
-                                }
- 
-                            } else {
- 
-                                Text(
-                                    "$flightNo • $registration • $aircraft • Stand $stand",
-                                    style =
-                                        MaterialTheme
-                                            .typography
-                                            .titleMedium
-                                )
-                            }
-                        }
- 
-                        if (started) {
- 
-                            itemsIndexed(stamps) {
-                                    index,
-                                    stamp ->
- 
-                                val isImportant =
-                                    stamp.name in
-                                        importantTimingNames
- 
-                                Card(
-                                    modifier =
-                                        Modifier.fillMaxWidth(),
-                                    colors =
-                                        CardDefaults.cardColors(
-                                            containerColor =
-                                                if (isImportant) {
-                                                    MaterialTheme
-                                                        .colorScheme
-                                                        .secondaryContainer
-                                                } else {
-                                                    MaterialTheme
-                                                        .colorScheme
-                                                        .surfaceVariant
+                            Scaffold(
+                                topBar = {
+                                    TopAppBar(
+                                        title = {
+                                            Text("Flight Details")
+                                        },
+                                        navigationIcon = {
+                                            IconButton(
+                                                onClick = {
+                                                    page =
+                                                        AppPage.HISTORY
                                                 }
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.ArrowBack,
+                                                    contentDescription =
+                                                        "Back"
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
+                            ) { padding ->
+ 
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(padding)
+                                        .padding(
+                                            horizontal = 14.dp
+                                        ),
+                                    contentPadding =
+                                        PaddingValues(
+                                            top = 8.dp,
+                                            bottom = 24.dp
+                                        ),
+                                    verticalArrangement =
+                                        Arrangement.spacedBy(
+                                            9.dp
                                         )
                                 ) {
  
-                                    Column(
-                                        modifier =
-                                            Modifier.padding(12.dp)
-                                    ) {
+                                    item {
+                                        FlightInfoCard(flight)
+                                    }
  
+                                    item {
                                         Text(
-                                            if (
-                                                stamp.time == null
-                                            ) {
-                                                stamp.name
-                                            } else {
-                                                "${stamp.name} • ${stamp.time}"
-                                            },
+                                            "Recorded Timings",
                                             style =
                                                 MaterialTheme
                                                     .typography
-                                                    .titleMedium
+                                                    .titleLarge,
+                                            fontWeight =
+                                                FontWeight.Bold
                                         )
+                                    }
+ 
+                                    items(visibleNames) { name ->
+                                        SavedTimingRow(
+                                            name = name,
+                                            time =
+                                                flight.timings[name]
+                                                    ?.takeIf {
+                                                        it.isNotBlank()
+                                                    }
+                                                    ?: "—"
+                                        )
+                                    }
+ 
+                                    item {
+                                        SummaryCard(
+                                            taskType =
+                                                flight.taskType,
+                                            turnaround =
+                                                formatDuration(
+                                                    secondsBetween(
+                                                        onBlock,
+                                                        offBlock
+                                                    )
+                                                ),
+                                            localDelivery =
+                                                formatDuration(
+                                                    secondsBetween(
+                                                        byFirst,
+                                                        byLast
+                                                    )
+                                                ),
+                                            transferDelivery =
+                                                formatDuration(
+                                                    secondsBetween(
+                                                        btFirst,
+                                                        btLast
+                                                    )
+                                                )
+                                        )
+                                    }
+ 
+                                    item {
+                                        Card(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                        ) {
+                                            Column(
+                                                modifier =
+                                                    Modifier.padding(
+                                                        16.dp
+                                                    )
+                                            ) {
+                                                Text(
+                                                    "Notes",
+                                                    fontWeight =
+                                                        FontWeight.Bold
+                                                )
+                                                Spacer(
+                                                    Modifier.height(
+                                                        6.dp
+                                                    )
+                                                )
+                                                Text(
+                                                    flight.notes
+                                                        .takeIf {
+                                                            it.isNotBlank()
+                                                        }
+                                                        ?: "No notes"
+                                                )
+                                            }
+                                        }
+                                    }
+ 
+                                    item {
+                                        Button(
+                                            onClick = {
+                                                prepareEdit(
+                                                    flight
+                                                )
+                                            },
+                                            modifier =
+                                                Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("EDIT FLIGHT")
+                                        }
  
                                         Spacer(
                                             Modifier.height(8.dp)
                                         )
  
-                                        if (
-                                            stamp.time == null
-                                        ) {
- 
-                                            Button(
-                                                onClick = {
-                                                    record(index)
-                                                },
-                                                modifier =
-                                                    Modifier
-                                                        .fillMaxWidth()
-                                            ) {
-                                                Text(
-                                                    "RECORD TIME"
+                                        OutlinedButton(
+                                            onClick = {
+                                                shareFlightReport(
+                                                    flight
                                                 )
-                                            }
+                                            },
+                                            modifier =
+                                                Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                "SHARE FLIGHT REPORT"
+                                            )
+                                        }
  
-                                        } else {
+                                        OutlinedButton(
+                                            onClick = {
+                                                copyFlightReport(
+                                                    flight
+                                                )
+                                            },
+                                            modifier =
+                                                Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                "COPY FLIGHT DETAILS"
+                                            )
+                                        }
  
-                                            Row(
-                                                modifier =
-                                                    Modifier
-                                                        .fillMaxWidth(),
-                                                horizontalArrangement =
-                                                    Arrangement
-                                                        .spacedBy(
-                                                            8.dp
-                                                        )
-                                            ) {
- 
-                                                OutlinedButton(
-                                                    onClick = {
-                                                        edit(index)
-                                                    },
-                                                    modifier =
-                                                        Modifier
-                                                            .weight(1f)
-                                                ) {
-                                                    Text("EDIT")
-                                                }
- 
-                                                OutlinedButton(
-                                                    onClick = {
-                                                        reset(index)
-                                                    },
-                                                    modifier =
-                                                        Modifier
-                                                            .weight(1f)
-                                                ) {
-                                                    Text("RESET")
-                                                }
-                                            }
+                                        OutlinedButton(
+                                            onClick = {
+                                                flightToDelete =
+                                                    flight
+                                            },
+                                            modifier =
+                                                Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("DELETE FLIGHT")
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
  
-                            item {
+                    AppPage.EDIT_SAVED_FLIGHT -> {
  
-                                Spacer(
-                                    Modifier.height(10.dp)
-                                )
- 
-                                Text(
-                                    "Automatic Timings",
-                                    style =
-                                        MaterialTheme
-                                            .typography
-                                            .titleLarge
-                                )
- 
-                                Spacer(
-                                    Modifier.height(8.dp)
-                                )
- 
-                                val onBlock =
-                                    stamps.first {
-                                        it.name == "On Block"
-                                    }.time
- 
-                                val offBlock =
-                                    stamps.first {
-                                        it.name == "Off Block"
-                                    }.time
- 
-                                val byFirst =
-                                    stamps.first {
-                                        it.name ==
-                                            "BY First Baggage"
-                                    }.time
- 
-                                val byLast =
-                                    stamps.first {
-                                        it.name ==
-                                            "BY Last Baggage"
-                                    }.time
- 
-                                val btFirst =
-                                    stamps.first {
-                                        it.name ==
-                                            "BT First Baggage"
-                                    }.time
- 
-                                val btLast =
-                                    stamps.first {
-                                        it.name ==
-                                            "BT Last Baggage"
-                                    }.time
- 
-                                Text(
-                                    "Turnaround: ${
-                                        formatDuration(
-                                            secondsBetween(
-                                                onBlock,
-                                                offBlock
-                                            )
-                                        )
-                                    }"
-                                )
- 
-                                Text(
-                                    "Local (BY) delivery: ${
-                                        formatDuration(
-                                            secondsBetween(
-                                                byFirst,
-                                                byLast
-                                            )
-                                        )
-                                    }"
-                                )
- 
-                                Text(
-                                    "Transfer (BT) delivery: ${
-                                        formatDuration(
-                                            secondsBetween(
-                                                btFirst,
-                                                btLast
-                                            )
-                                        )
-                                    }"
-                                )
- 
-                                Spacer(
-                                    Modifier.height(12.dp)
-                                )
- 
-                                OutlinedTextField(
-                                    value = notes,
-                                    onValueChange = {
-                                        notes = it
+                        Scaffold(
+                            topBar = {
+                                TopAppBar(
+                                    title = {
+                                        Text("Edit Flight")
                                     },
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .height(120.dp),
-                                    label = {
-                                        Text("Notes")
+                                    navigationIcon = {
+                                        IconButton(
+                                            onClick = {
+                                                page =
+                                                    AppPage.HISTORY_DETAILS
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.ArrowBack,
+                                                contentDescription = "Back"
+                                            )
+                                        }
                                     }
                                 )
+                            }
+                        ) { padding ->
  
-                                Spacer(
-                                    Modifier.height(12.dp)
-                                )
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(padding)
+                                    .padding(horizontal = 14.dp),
+                                contentPadding =
+                                    PaddingValues(
+                                        top = 8.dp,
+                                        bottom = 24.dp
+                                    ),
+                                verticalArrangement =
+                                    Arrangement.spacedBy(10.dp)
+                            ) {
  
-                                Button(
-                                    onClick = {
-                                        checkAndSaveFlight()
-                                    },
-                                    modifier =
-                                        Modifier.fillMaxWidth()
-                                ) {
-                                    Text("SAVE FLIGHT")
+                                item {
+                                    TaskBadge(selectedTaskType)
                                 }
  
-                                Spacer(
-                                    Modifier.height(8.dp)
-                                )
+                                item {
+                                    OutlinedTextField(
+                                        value = flightNo,
+                                        onValueChange = {
+                                            flightNo = it
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        label = {
+                                            Text("Flight Number")
+                                        },
+                                        singleLine = true
+                                    )
+                                }
  
-                                OutlinedButton(
-                                    onClick = {
-                                        showHistory = true
-                                    },
-                                    modifier =
-                                        Modifier.fillMaxWidth()
-                                ) {
-                                    Text("VIEW HISTORY")
+                                item {
+                                    OutlinedTextField(
+                                        value = registration,
+                                        onValueChange = {
+                                            registration = it
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        label = {
+                                            Text(
+                                                "Aircraft Registration"
+                                            )
+                                        },
+                                        singleLine = true
+                                    )
+                                }
+ 
+                                item {
+                                    OutlinedTextField(
+                                        value = aircraft,
+                                        onValueChange = {
+                                            aircraft = it
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        label = {
+                                            Text("Aircraft Type")
+                                        },
+                                        singleLine = true
+                                    )
+                                }
+ 
+                                item {
+                                    OutlinedTextField(
+                                        value = stand,
+                                        onValueChange = {
+                                            stand = it
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        label = {
+                                            Text("Stand")
+                                        },
+                                        singleLine = true
+                                    )
+                                }
+ 
+                                items(
+                                    stamps,
+                                    key = { it.name }
+                                ) { stamp ->
+ 
+                                    val index =
+                                        stamps.indexOfFirst {
+                                            it.name == stamp.name
+                                        }
+ 
+                                    TimingCard(
+                                        stamp = stamp,
+                                        onRecord = {
+                                            record(index)
+                                        },
+                                        onEdit = {
+                                            editStamp(index)
+                                        },
+                                        onReset = {
+                                            resetStamp(index)
+                                        }
+                                    )
+                                }
+ 
+                                item {
+                                    OutlinedTextField(
+                                        value = notes,
+                                        onValueChange = {
+                                            notes = it
+                                        },
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .height(120.dp),
+                                        label = {
+                                            Text("Notes")
+                                        }
+                                    )
+                                }
+ 
+                                item {
+                                    Button(
+                                        onClick = {
+                                            checkMissingAndSave(
+                                                isUpdate = true
+                                            )
+                                        },
+                                        enabled =
+                                            flightNo.isNotBlank() &&
+                                            registration.isNotBlank() &&
+                                            aircraft.isNotBlank() &&
+                                            stand.isNotBlank(),
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .height(54.dp)
+                                    ) {
+                                        Text("UPDATE FLIGHT")
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+ 
+@Composable
+fun OperationCard(
+    title: String,
+    subtitle: String,
+    symbol: String,
+    onClick: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(118.dp)
+            .clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .primaryContainer
+            ) {
+                Box(
+                    modifier =
+                        Modifier.size(62.dp),
+                    contentAlignment =
+                        Alignment.Center
+                ) {
+                    Text(
+                        symbol,
+                        style =
+                            MaterialTheme
+                                .typography
+                                .headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+ 
+            Spacer(
+                Modifier.width(18.dp)
+            )
+ 
+            Column {
+                Text(
+                    title,
+                    style =
+                        MaterialTheme
+                            .typography
+                            .titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+ 
+                Spacer(
+                    Modifier.height(4.dp)
+                )
+ 
+                Text(
+                    subtitle,
+                    style =
+                        MaterialTheme
+                            .typography
+                            .bodyMedium
+                )
+            }
+        }
+    }
+}
+ 
+@Composable
+fun TaskBadge(taskType: String) {
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color =
+            MaterialTheme
+                .colorScheme
+                .primaryContainer
+    ) {
+        Text(
+            taskType,
+            modifier =
+                Modifier.padding(
+                    horizontal = 16.dp,
+                    vertical = 8.dp
+                ),
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+ 
+@Composable
+fun TimingCard(
+    stamp: Stamp,
+    onRecord: () -> Unit,
+    onEdit: () -> Unit,
+    onReset: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.SpaceBetween,
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+                Text(
+                    stamp.name,
+                    style =
+                        MaterialTheme
+                            .typography
+                            .titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+ 
+                if (!stamp.time.isNullOrBlank()) {
+                    Text(
+                        "✓ ${stamp.time}",
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+ 
+            Spacer(
+                Modifier.height(10.dp)
+            )
+ 
+            if (stamp.time.isNullOrBlank()) {
+                Button(
+                    onClick = onRecord,
+                    modifier =
+                        Modifier.fillMaxWidth()
+                ) {
+                    Text("RECORD TIME")
+                }
+            } else {
+                Row(
+                    modifier =
+                        Modifier.fillMaxWidth(),
+                    horizontalArrangement =
+                        Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onEdit,
+                        modifier =
+                            Modifier.weight(1f)
+                    ) {
+                        Text("EDIT")
+                    }
+ 
+                    OutlinedButton(
+                        onClick = onReset,
+                        modifier =
+                            Modifier.weight(1f)
+                    ) {
+                        Text("RESET")
+                    }
+                }
+            }
+        }
+    }
+}
+ 
+@Composable
+fun SummaryCard(
+    taskType: String,
+    turnaround: String,
+    localDelivery: String,
+    transferDelivery: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                "Automatic Timings",
+                style =
+                    MaterialTheme
+                        .typography
+                        .titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+ 
+            Spacer(
+                Modifier.height(8.dp)
+            )
+ 
+            if (taskType == "TURNAROUND") {
+                Text("Turnaround: $turnaround")
+            }
+ 
+            if (
+                taskType == "ARRIVAL" ||
+                taskType == "TURNAROUND"
+            ) {
+                Text(
+                    "Local (BY) delivery: $localDelivery"
+                )
+                Text(
+                    "Transfer (BT) delivery: $transferDelivery"
+                )
+            }
+ 
+            if (taskType == "DEPARTURE") {
+                Text(
+                    "Departure timings are recorded above."
+                )
+            }
+        }
+    }
+}
+ 
+@Composable
+fun HistoryFlightCard(
+    flight: SavedFlight,
+    onClick: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.SpaceBetween
+            ) {
+                Text(
+                    flight.flightNo,
+                    style =
+                        MaterialTheme
+                            .typography
+                            .titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+ 
+                TaskBadge(flight.taskType)
+            }
+ 
+            Spacer(
+                Modifier.height(8.dp)
+            )
+ 
+            Text(
+                "${flight.registration} • ${flight.aircraft}"
+            )
+            Text(
+                "Stand ${flight.stand} • ${flight.date}"
+            )
+ 
+            Spacer(
+                Modifier.height(8.dp)
+            )
+ 
+            Text(
+                "Tap to view full details",
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .primary
+            )
+        }
+    }
+}
+ 
+@Composable
+fun FlightInfoCard(
+    flight: SavedFlight
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.SpaceBetween,
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+                Text(
+                    flight.flightNo,
+                    style =
+                        MaterialTheme
+                            .typography
+                            .headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+ 
+                TaskBadge(flight.taskType)
+            }
+ 
+            Spacer(
+                Modifier.height(8.dp)
+            )
+ 
+            Text(
+                "Registration: ${flight.registration}"
+            )
+            Text(
+                "Aircraft: ${flight.aircraft}"
+            )
+            Text(
+                "Stand: ${flight.stand}"
+            )
+            Text(
+                "Date: ${flight.date}"
+            )
+        }
+    }
+}
+ 
+@Composable
+fun SavedTimingRow(
+    name: String,
+    time: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement =
+                Arrangement.SpaceBetween
+        ) {
+            Text(
+                name,
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.Medium
+            )
+ 
+            Text(
+                time,
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .primary,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
