@@ -151,6 +151,7 @@ fun RampDutyApp() {
     var notes by remember { mutableStateOf("") }
  
     val stamps = remember { mutableStateListOf<Stamp>() }
+    val bagCounts = remember { mutableStateMapOf<String, String>() }
  
     var selectedFlight by remember { mutableStateOf<SavedFlight?>(null) }
     var historyRefreshKey by remember { mutableIntStateOf(0) }
