@@ -1898,6 +1898,25 @@ fun TimingCard(
                 }
             }
  
+            if (
+                stamp.name == "D-15 Baggage Received" ||
+                stamp.name == "D-10 Baggage Received"
+            ) {
+                Spacer(
+                    Modifier.height(10.dp)
+                )
+ 
+                OutlinedTextField(
+                    value = bagCount,
+                    onValueChange = onBagCountChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = {
+                        Text("Bag Count")
+                    },
+                    singleLine = true
+                )
+            }
+ 
             Spacer(
                 Modifier.height(10.dp)
             )
