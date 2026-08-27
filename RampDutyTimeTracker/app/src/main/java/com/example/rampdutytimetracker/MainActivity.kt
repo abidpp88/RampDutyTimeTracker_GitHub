@@ -46,6 +46,12 @@ data class Stamp(
     val time: String? = null
 )
 
+data class TaskDisplayRow(
+    val left: String,
+    val right: String? = null,
+    val countOnly: Boolean = false
+)
+
 data class SavedFlight(
     val flightNo: String,
     val departureFlightNo: String = "",
@@ -193,6 +199,47 @@ fun RampDutyApp() {
     if (showSplash) {
         RampSplashScreen()
         return
+    }
+
+    fun displayRowsForTask(taskType: String): List<TaskDisplayRow> {
+        return when (taskType.uppercase()) {
+            "ARRIVAL" -> listOf(
+                TaskDisplayRow("On Block"),
+                TaskDisplayRow("Chocks On"),
+                TaskDisplayRow("Step Start"),
+                TaskDisplayRow("GPU Start", "A/C Start"),
+                TaskDisplayRow("Hold Open"),
+                TaskDisplayRow("BY First Bag", "BY Last Bag"),
+                TaskDisplayRow("BT First Bag", "BT Last Bag")
+            )
+
+            "DEPARTURE" -> listOf(
+                TaskDisplayRow("Task Started", "LIR/NOTOC Received"),
+                TaskDisplayRow("Cargo Received", "First Bag Received"),
+                TaskDisplayRow("D-15 Baggage Received", countOnly = true),
+                TaskDisplayRow("Last Bag Received", "Last Bag Loaded"),
+                TaskDisplayRow("Hold Closed", "Cabin Door Closed"),
+                TaskDisplayRow("GPU End", "A/C End"),
+                TaskDisplayRow("Off Block")
+            )
+
+            else -> listOf(
+                TaskDisplayRow("On Block"),
+                TaskDisplayRow("Chocks On"),
+                TaskDisplayRow("Step Start", "Step End"),
+                TaskDisplayRow("GPU Start", "GPU End"),
+                TaskDisplayRow("A/C Start", "A/C End"),
+                TaskDisplayRow("Hold Open"),
+                TaskDisplayRow("BY First Bag", "BY Last Bag"),
+                TaskDisplayRow("BT First Bag", "BT Last Bag"),
+                TaskDisplayRow("LIR/NOTOC Received"),
+                TaskDisplayRow("Cargo Received", "First Bag Received"),
+                TaskDisplayRow("D-15 Baggage Received", countOnly = true),
+                TaskDisplayRow("Last Bag Received", "Last Bag Loaded"),
+                TaskDisplayRow("Hold Closed", "Cabin Door Closed"),
+                TaskDisplayRow("Off Block")
+            )
+        }
     }
 
     fun namesForTask(taskType: String): List<String> {
@@ -1366,7 +1413,18 @@ fun RampDutyApp() {
                     AppPage.ACTIVE_FLIGHT -> {
                         Scaffold(
                             topBar = {
+                                val activeTheme = when (selectedTaskType) {
+                                    "ARRIVAL" -> Color(0xFF087A2F)
+                                    "DEPARTURE" -> Color(0xFF4B1FA3)
+                                    else -> Color(0xFFD31313)
+                                }
+
                                 TopAppBar(
+                                    colors = TopAppBarDefaults.topAppBarColors(
+                                        containerColor = activeTheme,
+                                        titleContentColor = Color.White,
+                                        navigationIconContentColor = Color.White
+                                    ),
                                     title = {
                                         Column {
                                             Text(selectedTaskType)
@@ -1403,24 +1461,43 @@ fun RampDutyApp() {
                                 verticalArrangement = Arrangement.spacedBy(9.dp)
                             ) {
                                 items(
-                                    stamps,
-                                    key = { it.name }
-                                ) { stamp ->
-                                    val index = stamps.indexOfFirst {
-                                        it.name == stamp.name
-                                    }
+                                    displayRowsForTask(selectedTaskType),
+                                    key = { "${it.left}-${it.right ?: ""}" }
+                                ) { row ->
+                                    val leftIndex = stamps.indexOfFirst { it.name == row.left }
+                                    val rightIndex = row.right?.let { rightName ->
+                                        stamps.indexOfFirst { it.name == rightName }
+                                    } ?: -1
 
-                                    TimingCard(
-                                        stamp = stamp,
-                                        bagCount = bagCounts[stamp.name] ?: "",
-                                        onBagCountChange = { value ->
+                                    TaskTimingRow(
+                                        row = row,
+                                        leftStamp = stamps.getOrNull(leftIndex),
+                                        rightStamp = stamps.getOrNull(rightIndex),
+                                        leftBagCount = bagCounts[row.left] ?: "",
+                                        onLeftBagCountChange = { value ->
                                             if (value.all { it.isDigit() }) {
-                                                bagCounts[stamp.name] = value
+                                                bagCounts[row.left] = value
                                             }
                                         },
-                                        onRecord = { record(index) },
-                                        onEdit = { editStamp(index) },
-                                        onReset = { resetStamp(index) }
+                                        onLeftRecord = {
+                                            if (leftIndex >= 0) record(leftIndex)
+                                        },
+                                        onLeftEdit = {
+                                            if (leftIndex >= 0) editStamp(leftIndex)
+                                        },
+                                        onLeftReset = {
+                                            if (leftIndex >= 0) resetStamp(leftIndex)
+                                        },
+                                        onRightRecord = {
+                                            if (rightIndex >= 0) record(rightIndex)
+                                        },
+                                        onRightEdit = {
+                                            if (rightIndex >= 0) editStamp(rightIndex)
+                                        },
+                                        onRightReset = {
+                                            if (rightIndex >= 0) resetStamp(rightIndex)
+                                        },
+                                        taskType = selectedTaskType
                                     )
                                 }
 
@@ -1855,24 +1932,43 @@ fun RampDutyApp() {
                                 }
 
                                 items(
-                                    stamps,
-                                    key = { it.name }
-                                ) { stamp ->
-                                    val index = stamps.indexOfFirst {
-                                        it.name == stamp.name
-                                    }
+                                    displayRowsForTask(selectedTaskType),
+                                    key = { "edit-${it.left}-${it.right ?: ""}" }
+                                ) { row ->
+                                    val leftIndex = stamps.indexOfFirst { it.name == row.left }
+                                    val rightIndex = row.right?.let { rightName ->
+                                        stamps.indexOfFirst { it.name == rightName }
+                                    } ?: -1
 
-                                    TimingCard(
-                                        stamp = stamp,
-                                        bagCount = bagCounts[stamp.name] ?: "",
-                                        onBagCountChange = { value ->
+                                    TaskTimingRow(
+                                        row = row,
+                                        leftStamp = stamps.getOrNull(leftIndex),
+                                        rightStamp = stamps.getOrNull(rightIndex),
+                                        leftBagCount = bagCounts[row.left] ?: "",
+                                        onLeftBagCountChange = { value ->
                                             if (value.all { it.isDigit() }) {
-                                                bagCounts[stamp.name] = value
+                                                bagCounts[row.left] = value
                                             }
                                         },
-                                        onRecord = { record(index) },
-                                        onEdit = { editStamp(index) },
-                                        onReset = { resetStamp(index) }
+                                        onLeftRecord = {
+                                            if (leftIndex >= 0) record(leftIndex)
+                                        },
+                                        onLeftEdit = {
+                                            if (leftIndex >= 0) editStamp(leftIndex)
+                                        },
+                                        onLeftReset = {
+                                            if (leftIndex >= 0) resetStamp(leftIndex)
+                                        },
+                                        onRightRecord = {
+                                            if (rightIndex >= 0) record(rightIndex)
+                                        },
+                                        onRightEdit = {
+                                            if (rightIndex >= 0) editStamp(rightIndex)
+                                        },
+                                        onRightReset = {
+                                            if (rightIndex >= 0) resetStamp(rightIndex)
+                                        },
+                                        taskType = selectedTaskType
                                     )
                                 }
 
@@ -2379,24 +2475,15 @@ fun OperationCard(
 ) {
     val cardBrush = when (title) {
         "ARRIVAL" -> Brush.horizontalGradient(
-            listOf(
-                Color(0xFF10368F),
-                Color(0xFF1F5BC8)
-            )
+            listOf(Color(0xFF04551F), Color(0xFF087A2F))
         )
 
         "DEPARTURE" -> Brush.horizontalGradient(
-            listOf(
-                Color(0xFF174EA6),
-                Color(0xFF2F76D0)
-            )
+            listOf(Color(0xFF2C126B), Color(0xFF4B1FA3))
         )
 
         else -> Brush.horizontalGradient(
-            listOf(
-                Color(0xFF075B75),
-                Color(0xFF1888A8)
-            )
+            listOf(Color(0xFF9D0808), Color(0xFFD31313))
         )
     }
 
@@ -2472,6 +2559,177 @@ fun TaskBadge(taskType: String) {
 }
 
 @Composable
+fun TaskTimingRow(
+    row: TaskDisplayRow,
+    leftStamp: Stamp?,
+    rightStamp: Stamp?,
+    leftBagCount: String,
+    onLeftBagCountChange: (String) -> Unit,
+    onLeftRecord: () -> Unit,
+    onLeftEdit: () -> Unit,
+    onLeftReset: () -> Unit,
+    onRightRecord: () -> Unit,
+    onRightEdit: () -> Unit,
+    onRightReset: () -> Unit,
+    taskType: String
+) {
+    val themeColor = when (taskType) {
+        "ARRIVAL" -> Color(0xFF087A2F)
+        "DEPARTURE" -> Color(0xFF4B1FA3)
+        else -> Color(0xFFD31313)
+    }
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        if (row.countOnly) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
+            ) {
+                Text(
+                    text = row.left,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = leftBagCount,
+                    onValueChange = onLeftBagCountChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Bag Count (No Time Stamp)") },
+                    singleLine = true
+                )
+            }
+        } else if (row.right == null) {
+            TimestampCell(
+                label = row.left,
+                stamp = leftStamp,
+                onRecord = onLeftRecord,
+                onEdit = onLeftEdit,
+                onReset = onLeftReset,
+                themeColor = themeColor,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
+            )
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                TimestampCell(
+                    label = row.left,
+                    stamp = leftStamp,
+                    onRecord = onLeftRecord,
+                    onEdit = onLeftEdit,
+                    onReset = onLeftReset,
+                    themeColor = themeColor,
+                    modifier = Modifier.weight(1f)
+                )
+
+                TimestampCell(
+                    label = row.right,
+                    stamp = rightStamp,
+                    onRecord = onRightRecord,
+                    onEdit = onRightEdit,
+                    onReset = onRightReset,
+                    themeColor = themeColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TimestampCell(
+    label: String,
+    stamp: Stamp?,
+    onRecord: () -> Unit,
+    onEdit: () -> Unit,
+    onReset: () -> Unit,
+    themeColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = themeColor
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        if (stamp?.time.isNullOrBlank()) {
+            Button(
+                onClick = onRecord,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = themeColor
+                ),
+                contentPadding = PaddingValues(
+                    horizontal = 8.dp,
+                    vertical = 10.dp
+                )
+            ) {
+                Text("RECORD")
+            }
+        } else {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = themeColor.copy(alpha = 0.08f)
+            ) {
+                Text(
+                    text = stamp?.time ?: "",
+                    modifier = Modifier.padding(
+                        horizontal = 10.dp,
+                        vertical = 10.dp
+                    ),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    color = themeColor
+                )
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TextButton(
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) {
+                    Text("EDIT", color = themeColor)
+                }
+
+                TextButton(
+                    onClick = onReset,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) {
+                    Text("RESET", color = themeColor)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun TimingCard(
     stamp: Stamp,
     bagCount: String,
@@ -2486,73 +2744,61 @@ fun TimingCard(
         Column(
             modifier = Modifier.padding(14.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    stamp.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
+            Text(
+                stamp.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
 
-                if (!stamp.time.isNullOrBlank()) {
-                    Text(
-                        "✓ ${stamp.time}",
-                        color = RoyalBlue,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            if (
-                stamp.name == "D-15 Baggage Received" ||
-                stamp.name == "D-10 Baggage Received"
-            ) {
+            if (stamp.name == "D-15 Baggage Received") {
                 Spacer(Modifier.height(10.dp))
 
                 OutlinedTextField(
                     value = bagCount,
                     onValueChange = onBagCountChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text("Bag Count")
-                    },
+                    label = { Text("Bag Count (No Time Stamp)") },
                     singleLine = true
                 )
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            if (stamp.time.isNullOrBlank()) {
-                Button(
-                    onClick = onRecord,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Navy
-                    )
-                ) {
-                    Text("RECORD TIME")
-                }
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onEdit,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("EDIT")
-                    }
+                Spacer(Modifier.height(10.dp))
 
-                    OutlinedButton(
-                        onClick = onReset,
-                        modifier = Modifier.weight(1f)
+                if (stamp.time.isNullOrBlank()) {
+                    Button(
+                        onClick = onRecord,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Navy
+                        )
                     ) {
-                        Text("RESET")
+                        Text("RECORD TIME")
+                    }
+                } else {
+                    Text(
+                        text = "✓ ${stamp.time}",
+                        color = RoyalBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onEdit,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("EDIT")
+                        }
+
+                        OutlinedButton(
+                            onClick = onReset,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("RESET")
+                        }
                     }
                 }
             }
