@@ -615,9 +615,9 @@ fun RampDutyApp() {
             appendLine()
             appendLine("Task: ${flight.taskType}")
             if (flight.taskType == "TURNAROUND") {
-                appendLine("Arrival Flight: ${flight.flightNo}")
+                appendLine("Arrival Flight#: ${flight.flightNo}")
                 appendLine("STA: ${flight.sta.ifBlank { "—" }}")
-                appendLine("Departure Flight: ${flight.departureFlightNo.ifBlank { "—" }}")
+                appendLine("Departure Flight#: ${flight.departureFlightNo.ifBlank { "—" }}")
                 appendLine("STD: ${flight.std.ifBlank { "—" }}")
             } else {
                 appendLine("Flight: ${flight.flightNo}")
@@ -965,14 +965,14 @@ fun RampDutyApp() {
  
             sectionTitle("FLIGHT INFORMATION")
             if (flight.taskType == "TURNAROUND") {
-                infoRow("Arrival Flight", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
-                infoRow("Departure Flight", flight.departureFlightNo.ifBlank { "—" }, "STD", flight.std.ifBlank { "—" })
+                infoRow("Arrival Flight#", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
+                infoRow("Departure Flight#", flight.departureFlightNo.ifBlank { "—" }, "STD", flight.std.ifBlank { "—" })
             } else if (flight.taskType == "ARRIVAL") {
-                infoRow("Flight", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
+                infoRow("Flight#", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
             } else {
-                infoRow("Flight", flight.flightNo, "STD", flight.std.ifBlank { "—" })
+                infoRow("Flight#", flight.flightNo, "STD", flight.std.ifBlank { "—" })
             }
-            infoRow("Registration", flight.registration, "Aircraft", flight.aircraft)
+            infoRow("A/C Regi:", flight.registration, "A/C Type", flight.aircraft)
             infoRow("Stand", flight.stand, "Date", flight.date)
             val taskStartPdf = getTime(flight.timings, "Task Start", "Task Started")
             val taskEndPdf = getTime(flight.timings, "Task End")
@@ -1897,7 +1897,7 @@ fun RampDutyApp() {
                                         },
                                         modifier = Modifier.fillMaxWidth(),
                                         label = {
-                                            Text("Flight Number")
+                                            Text("Flight#")
                                         },
                                         singleLine = true
                                     )
@@ -1911,7 +1911,7 @@ fun RampDutyApp() {
                                         },
                                         modifier = Modifier.fillMaxWidth(),
                                         label = {
-                                            Text("Aircraft Registration")
+                                            Text("A/C Regi:")
                                         },
                                         singleLine = true
                                     )
@@ -1925,7 +1925,7 @@ fun RampDutyApp() {
                                         },
                                         modifier = Modifier.fillMaxWidth(),
                                         label = {
-                                            Text("Aircraft Type")
+                                            Text("A/C Type")
                                         },
                                         singleLine = true
                                     )
@@ -2282,7 +2282,7 @@ fun FlightSetupScreen(
                 item {
                     FlightSetupFieldPair(
                         leftValue = flightNo, leftOnValueChange = onFlightNoChange,
-                        leftTitle = "Arrival Flight", leftHint = "Flight no.", leftSymbol = "✈",
+                        leftTitle = "Arrival Flight#", leftHint = "Flight no.", leftSymbol = "✈",
                         rightValue = sta, rightOnValueChange = onStaChange,
                         rightTitle = "STA", rightHint = "HH:mm", rightSymbol = "◷"
                     )
@@ -2290,7 +2290,7 @@ fun FlightSetupScreen(
                 item {
                     FlightSetupFieldPair(
                         leftValue = departureFlightNo, leftOnValueChange = onDepartureFlightNoChange,
-                        leftTitle = "Departure Flight", leftHint = "Flight no.", leftSymbol = "✈",
+                        leftTitle = "Departure Flight#", leftHint = "Flight no.", leftSymbol = "✈",
                         rightValue = std, rightOnValueChange = onStdChange,
                         rightTitle = "STD", rightHint = "HH:mm", rightSymbol = "◷"
                     )
@@ -2299,7 +2299,7 @@ fun FlightSetupScreen(
                 item {
                     FlightSetupFieldPair(
                         leftValue = flightNo, leftOnValueChange = onFlightNoChange,
-                        leftTitle = "Flight Number", leftHint = "Flight no.", leftSymbol = "✈",
+                        leftTitle = "Flight#", leftHint = "Flight no.", leftSymbol = "✈",
                         rightValue = if (taskType == "ARRIVAL") sta else std,
                         rightOnValueChange = if (taskType == "ARRIVAL") onStaChange else onStdChange,
                         rightTitle = if (taskType == "ARRIVAL") "STA" else "STD",
@@ -2311,9 +2311,9 @@ fun FlightSetupScreen(
             item {
                 FlightSetupFieldPair(
                     leftValue = registration, leftOnValueChange = onRegistrationChange,
-                    leftTitle = "Aircraft Registration", leftHint = "Registration", leftSymbol = "▣",
+                    leftTitle = "A/C Regi:", leftHint = "A/C Regi:", leftSymbol = "▣",
                     rightValue = aircraft, rightOnValueChange = onAircraftChange,
-                    rightTitle = "Aircraft Type", rightHint = "e.g. A350", rightSymbol = "✈"
+                    rightTitle = "A/C Type", rightHint = "e.g. A350", rightSymbol = "✈"
                 )
             }
  
@@ -2982,14 +2982,14 @@ fun FlightInfoCard(
             }
  
             if (flight.taskType == "TURNAROUND") {
-                detailPair("Arrival Flight", flight.flightNo, "STA", flight.sta)
-                detailPair("Departure Flight", flight.departureFlightNo, "STD", flight.std)
+                detailPair("Arrival Flight#", flight.flightNo, "STA", flight.sta)
+                detailPair("Departure Flight#", flight.departureFlightNo, "STD", flight.std)
             } else if (flight.taskType == "ARRIVAL") {
-                detailPair("Flight Number", flight.flightNo, "STA", flight.sta)
+                detailPair("Flight#", flight.flightNo, "STA", flight.sta)
             } else {
-                detailPair("Flight Number", flight.flightNo, "STD", flight.std)
+                detailPair("Flight#", flight.flightNo, "STD", flight.std)
             }
-            detailPair("Aircraft Registration", flight.registration, "Aircraft Type", flight.aircraft)
+            detailPair("A/C Regi:", flight.registration, "A/C Type", flight.aircraft)
             detailPair("Stand", flight.stand, "Date", flight.date)
         }
     }
