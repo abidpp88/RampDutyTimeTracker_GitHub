@@ -333,7 +333,7 @@ fun RampDutyApp() {
         return try {
             fun toMinutes(value: String): Long {
                 val parts = value.split(":")
-                parts[0].toLong() * 60L + parts[1].toLong()
+                return parts[0].toLong() * 60L + parts[1].toLong()
             }
             val startMinutes = toMinutes(first)
             var endMinutes = toMinutes(last)
