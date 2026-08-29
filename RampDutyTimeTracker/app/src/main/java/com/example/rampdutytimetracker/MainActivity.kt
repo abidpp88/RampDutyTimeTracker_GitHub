@@ -52,6 +52,17 @@ data class TaskDisplayRow(
     val countOnly: Boolean = false
 )
  
+data class D15Entry(
+    val pieces: String = "",
+    val time: String = ""
+)
+ 
+data class OffloadEntry(
+    val startTime: String = "",
+    val endTime: String = "",
+    val pieces: String = ""
+)
+ 
 data class SavedFlight(
     val flightNo: String,
     val departureFlightNo: String = "",
@@ -65,6 +76,8 @@ data class SavedFlight(
     val taskType: String,
     val timings: Map<String, String>,
     val bagCounts: Map<String, String>,
+    val d15Entries: List<D15Entry> = emptyList(),
+    val offloadEntries: List<OffloadEntry> = emptyList(),
     val storageIndex: Int
 )
  
@@ -74,7 +87,8 @@ private enum class AppPage {
     ACTIVE_FLIGHT,
     HISTORY,
     HISTORY_DETAILS,
-    EDIT_SAVED_FLIGHT
+    EDIT_SAVED_FLIGHT,
+    SHIFT_REPORT
 }
  
 private val Navy = Color(0xFF0B2A78)
@@ -120,6 +134,7 @@ fun RampDutyApp() {
         "D-15 Baggage Received",
         "Last Bag Received",
         "Last Bag Loaded",
+        "LIR Handover",
         "Hold Closed",
         "Cabin Door Closed",
         "GPU End",
@@ -149,6 +164,7 @@ fun RampDutyApp() {
         "D-15 Baggage Received",
         "Last Bag Received",
         "Last Bag Loaded",
+        "LIR Handover",
         "Hold Closed",
         "Cabin Door Closed",
         "Off Block"
@@ -186,6 +202,12 @@ fun RampDutyApp() {
  
     val stamps = remember { mutableStateListOf<Stamp>() }
     val bagCounts = remember { mutableStateMapOf<String, String>() }
+    val d15Entries = remember { mutableStateListOf<D15Entry>() }
+    val offloadEntries = remember { mutableStateListOf<OffloadEntry>() }
+ 
+    var shiftDate by remember { mutableStateOf(SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())) }
+    var shiftStart by remember { mutableStateOf("05:00") }
+    var shiftEnd by remember { mutableStateOf("17:00") }
  
     var selectedFlight by remember { mutableStateOf<SavedFlight?>(null) }
     var historyRefreshKey by remember { mutableIntStateOf(0) }
@@ -226,6 +248,7 @@ fun RampDutyApp() {
                 TaskDisplayRow("Cargo Received", "First Bag Received"),
                 TaskDisplayRow("D-15 Baggage Received", countOnly = true),
                 TaskDisplayRow("Last Bag Received", "Last Bag Loaded"),
+                TaskDisplayRow("LIR Handover"),
                 TaskDisplayRow("Hold Closed", "Cabin Door Closed"),
                 TaskDisplayRow("GPU End", "A/C End"),
                 TaskDisplayRow("Off Block")
@@ -245,6 +268,7 @@ fun RampDutyApp() {
                 TaskDisplayRow("Cargo Received", "First Bag Received"),
                 TaskDisplayRow("D-15 Baggage Received", countOnly = true),
                 TaskDisplayRow("Last Bag Received", "Last Bag Loaded"),
+                TaskDisplayRow("LIR Handover"),
                 TaskDisplayRow("Hold Closed", "Cabin Door Closed"),
                 TaskDisplayRow("Off Block")
             )
@@ -270,6 +294,8 @@ fun RampDutyApp() {
         notes = ""
         stamps.clear()
         bagCounts.clear()
+        d15Entries.clear()
+        offloadEntries.clear()
     }
  
     fun startNewTask(taskType: String) {
@@ -372,6 +398,23 @@ fun RampDutyApp() {
             val timingsMap = mutableMapOf<String, String>()
             val countsObject = item.optJSONObject("bagCounts") ?: JSONObject()
             val countsMap = mutableMapOf<String, String>()
+            val d15List = mutableListOf<D15Entry>()
+            val d15Array = item.optJSONArray("d15Entries") ?: JSONArray()
+            for (j in 0 until d15Array.length()) {
+                val e = d15Array.optJSONObject(j) ?: continue
+                d15List.add(D15Entry(e.optString("pieces"), e.optString("time")))
+            }
+            // Backward compatibility: convert the old single D-15 count to one entry.
+            if (d15List.isEmpty()) {
+                val oldCount = countsObject.optString("D-15 Baggage Received", "")
+                if (oldCount.isNotBlank()) d15List.add(D15Entry(oldCount, ""))
+            }
+            val offloadList = mutableListOf<OffloadEntry>()
+            val offloadArray = item.optJSONArray("offloadEntries") ?: JSONArray()
+            for (j in 0 until offloadArray.length()) {
+                val e = offloadArray.optJSONObject(j) ?: continue
+                offloadList.add(OffloadEntry(e.optString("startTime"), e.optString("endTime"), e.optString("pieces")))
+            }
  
             val keys = timingsObject.keys()
             while (keys.hasNext()) {
@@ -409,6 +452,8 @@ fun RampDutyApp() {
                     taskType = taskType,
                     timings = timingsMap,
                     bagCounts = countsMap,
+                    d15Entries = d15List,
+                    offloadEntries = offloadList,
                     storageIndex = i
                 )
             )
@@ -430,7 +475,9 @@ fun RampDutyApp() {
         dateText: String,
         notesText: String,
         stampList: List<Stamp>,
-        counts: Map<String, String>
+        counts: Map<String, String>,
+        d15List: List<D15Entry>,
+        offloadList: List<OffloadEntry>
     ) {
         obj.put("flightNo", flightNumber)
         obj.put("departureFlightNo", departureFlightNumber)
@@ -454,6 +501,25 @@ fun RampDutyApp() {
             countJson.put(name, count)
         }
         obj.put("bagCounts", countJson)
+ 
+        val d15Json = JSONArray()
+        d15List.forEach { entry ->
+            d15Json.put(JSONObject().apply {
+                put("pieces", entry.pieces)
+                put("time", entry.time)
+            })
+        }
+        obj.put("d15Entries", d15Json)
+ 
+        val offloadJson = JSONArray()
+        offloadList.forEach { entry ->
+            offloadJson.put(JSONObject().apply {
+                put("startTime", entry.startTime)
+                put("endTime", entry.endTime)
+                put("pieces", entry.pieces)
+            })
+        }
+        obj.put("offloadEntries", offloadJson)
     }
  
     fun saveNewFlight() {
@@ -480,7 +546,9 @@ fun RampDutyApp() {
             dateText = dateText,
             notesText = notes,
             stampList = stamps,
-            counts = bagCounts
+            counts = bagCounts,
+            d15List = d15Entries,
+            offloadList = offloadEntries
         )
  
         array.put(obj)
@@ -528,7 +596,9 @@ fun RampDutyApp() {
             dateText = original.date,
             notesText = notes,
             stampList = stamps,
-            counts = bagCounts
+            counts = bagCounts,
+            d15List = d15Entries,
+            offloadList = offloadEntries
         )
  
         array.put(original.storageIndex, updated)
@@ -553,6 +623,8 @@ fun RampDutyApp() {
             taskType = selectedTaskType,
             timings = stamps.associate { it.name to (it.time ?: "") },
             bagCounts = bagCounts.toMap(),
+            d15Entries = d15Entries.toList(),
+            offloadEntries = offloadEntries.toList(),
             storageIndex = original.storageIndex
         )
  
@@ -646,7 +718,24 @@ fun RampDutyApp() {
                 }
             }
  
-            if (flight.taskType == "ARRIVAL" || flight.taskType == "TURNAROUND") {
+            if (flight.taskType == "DEPARTURE" || flight.taskType == "TURNAROUND") {
+            appendLine()
+            appendLine("D-15 Bags Received")
+            if (flight.d15Entries.isEmpty()) appendLine("No D-15 entries")
+            flight.d15Entries.forEachIndexed { index, entry ->
+                appendLine("${index + 1}. ${entry.pieces.ifBlank { "—" }} pcs • ${entry.time.ifBlank { "—" }}")
+            }
+            appendLine("Total D-15 Bags: ${flight.d15Entries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs")
+            appendLine()
+            appendLine("Bags Offload")
+            if (flight.offloadEntries.isEmpty()) appendLine("No offload entries")
+            flight.offloadEntries.forEachIndexed { index, entry ->
+                appendLine("${index + 1}. ${entry.startTime.ifBlank { "—" }} → ${entry.endTime.ifBlank { "—" }} • ${entry.pieces.ifBlank { "—" }} pcs")
+            }
+            appendLine("Total Offloaded: ${flight.offloadEntries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs")
+        }
+ 
+        if (flight.taskType == "ARRIVAL" || flight.taskType == "TURNAROUND") {
                 appendLine()
                 appendLine("Baggage Delivery Performance (from Chocks On)")
                 appendLine(
@@ -988,6 +1077,22 @@ fun RampDutyApp() {
                 timingRow(name, time, count)
             }
  
+            if (flight.taskType == "DEPARTURE" || flight.taskType == "TURNAROUND") {
+                y += 4f
+            sectionTitle("D-15 BAGS RECEIVED")
+            flight.d15Entries.forEachIndexed { index, entry ->
+                performanceRow("Batch ${index + 1} • ${entry.time.ifBlank { "—" }}", "${entry.pieces.ifBlank { "—" }} pcs")
+            }
+            performanceRow("Total D-15 Bags", "${flight.d15Entries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs")
+ 
+            y += 4f
+            sectionTitle("BAGS OFFLOAD")
+            flight.offloadEntries.forEachIndexed { index, entry ->
+                performanceRow("${index + 1}. ${entry.startTime.ifBlank { "—" }} → ${entry.endTime.ifBlank { "—" }}", "${entry.pieces.ifBlank { "—" }} pcs")
+            }
+            performanceRow("Total Offloaded", "${flight.offloadEntries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs")
+        }
+ 
             if (flight.taskType == "ARRIVAL" || flight.taskType == "TURNAROUND") {
                 val chocksOn = getTime(flight.timings, "Chocks On")
                 val byFirst = getTime(
@@ -1138,6 +1243,130 @@ fun RampDutyApp() {
         }
     }
  
+    fun flightsForShift(): List<SavedFlight> {
+        fun toMinutes(value: String): Int? {
+            val p = value.split(":")
+            return if (p.size >= 2) p[0].toIntOrNull()?.let { h -> p[1].toIntOrNull()?.let { m -> h * 60 + m } } else null
+        }
+        val start = toMinutes(shiftStart) ?: 0
+        val end = toMinutes(shiftEnd) ?: (24 * 60 - 1)
+        return loadHistory().filter { flight ->
+            val parts = flight.date.split(" ")
+            val datePart = parts.getOrNull(0) ?: ""
+            val timePart = parts.getOrNull(1) ?: ""
+            val t = toMinutes(timePart) ?: return@filter false
+            val inWindow = if (end >= start) t in start..end else (t >= start || t <= end)
+            datePart == shiftDate && inWindow
+        }.sortedBy { it.date }
+    }
+ 
+    fun shareShiftReportAsPdf(flights: List<SavedFlight>) {
+        if (flights.isEmpty()) {
+            Toast.makeText(context, "No flights found for this shift", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val pdf = PdfDocument()
+            val pageWidth = 595
+            val pageHeight = 842
+            val margin = 32f
+            val navy = AndroidColor.rgb(11, 42, 120)
+            val dark = AndroidColor.rgb(25, 31, 43)
+            val grey = AndroidColor.rgb(105, 112, 124)
+            val pale = AndroidColor.rgb(240, 246, 255)
+            val title = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.WHITE; textSize = 20f; typeface = Typeface.DEFAULT_BOLD }
+            val h = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = navy; textSize = 12f; typeface = Typeface.DEFAULT_BOLD }
+            val body = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = dark; textSize = 9.5f }
+            val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = grey; textSize = 8f }
+            var pageNo = 0
+            lateinit var page: PdfDocument.Page
+            lateinit var canvas: android.graphics.Canvas
+            var y = 0f
+            fun newPage(subtitle: String) {
+                if (pageNo > 0) pdf.finishPage(page)
+                pageNo++
+                page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNo).create())
+                canvas = page.canvas
+                canvas.drawRect(0f, 0f, pageWidth.toFloat(), 78f, Paint().apply { color = navy })
+                canvas.drawText("RAMP TASK TIME TRACKER", margin, 31f, title)
+                canvas.drawText(subtitle, margin, 53f, Paint(body).apply { color = AndroidColor.rgb(220,230,255) })
+                y = 98f
+            }
+            fun ensure(height: Float, subtitle: String = "DAILY SHIFT REPORT • FLIGHT DETAILS") {
+                if (y + height > pageHeight - 42f) newPage(subtitle)
+            }
+            fun line(label: String, value: String) {
+                ensure(22f)
+                canvas.drawText(label, margin + 8f, y + 12f, body)
+                canvas.drawText(value, pageWidth - margin - 145f, y + 12f, Paint(body).apply { typeface = Typeface.DEFAULT_BOLD; color = navy })
+                y += 20f
+            }
+            val arrivals = flights.count { it.taskType == "ARRIVAL" }
+            val departures = flights.count { it.taskType == "DEPARTURE" }
+            val turnarounds = flights.count { it.taskType == "TURNAROUND" }
+            val incomplete = flights.count { f -> getTime(f.timings, "Task Start", "Task Started").isNullOrBlank() || getTime(f.timings, "Task End").isNullOrBlank() }
+            newPage("DAILY SHIFT REPORT")
+            canvas.drawRoundRect(RectF(margin, y, pageWidth - margin, y + 86f), 10f, 10f, Paint().apply { color = pale })
+            canvas.drawText("SHIFT OVERVIEW", margin + 12f, y + 19f, h)
+            canvas.drawText("Date: $shiftDate", margin + 12f, y + 39f, body)
+            canvas.drawText("Shift: $shiftStart - $shiftEnd", margin + 12f, y + 57f, body)
+            canvas.drawText("Total Flights: ${flights.size}", 330f, y + 39f, h)
+            canvas.drawText("Arrival $arrivals  •  Departure $departures  •  Turnaround $turnarounds", 330f, y + 57f, body)
+            canvas.drawText("Incomplete: $incomplete", 330f, y + 75f, Paint(body).apply { color = if (incomplete == 0) AndroidColor.rgb(0,120,60) else AndroidColor.RED })
+            y += 104f
+            canvas.drawText("FLIGHT SUMMARY", margin, y, h); y += 16f
+            flights.forEachIndexed { index, f ->
+                ensure(42f)
+                if (index % 2 == 0) canvas.drawRect(margin, y - 4f, pageWidth - margin, y + 31f, Paint().apply { color = AndroidColor.rgb(248,250,253) })
+                val flightLabel = if (f.taskType == "TURNAROUND") "${f.flightNo} / ${f.departureFlightNo}" else f.flightNo
+                canvas.drawText("${index + 1}. $flightLabel", margin + 8f, y + 10f, Paint(body).apply { typeface = Typeface.DEFAULT_BOLD })
+                canvas.drawText(f.taskType, 185f, y + 10f, body)
+                canvas.drawText("${f.registration} • Stand ${f.stand}", 275f, y + 10f, body)
+                val st = displayTime(getTime(f.timings, "Task Start", "Task Started")); val en = displayTime(getTime(f.timings, "Task End"))
+                canvas.drawText("$st - $en", 455f, y + 10f, body)
+                canvas.drawText("Duration: ${formatDuration(secondsBetween(getTime(f.timings, "Task Start", "Task Started"), getTime(f.timings, "Task End")))}", margin + 8f, y + 27f, small)
+                y += 36f
+            }
+            flights.forEach { f ->
+                newPage("DAILY SHIFT REPORT • FLIGHT DETAILS")
+                val flightLabel = if (f.taskType == "TURNAROUND") "${f.flightNo} / ${f.departureFlightNo}" else f.flightNo
+                canvas.drawText("$flightLabel • ${f.taskType}", margin, y, h); y += 20f
+                line("A/C Regi / Type", "${f.registration} / ${f.aircraft}")
+                line("Stand", f.stand)
+                line("STA / STD", "${f.sta.ifBlank { "—" }} / ${f.std.ifBlank { "—" }}")
+                line("Task Start / End", "${displayTime(getTime(f.timings, "Task Start", "Task Started"))} / ${displayTime(getTime(f.timings, "Task End"))}")
+                y += 5f; canvas.drawText("RECORDED TIMINGS", margin, y, h); y += 16f
+                namesForTask(f.taskType).filter { it != "D-15 Baggage Received" }.forEach { name -> line(name, displayTime(f.timings[name])) }
+                if (f.taskType == "DEPARTURE" || f.taskType == "TURNAROUND") {
+                    y += 5f; canvas.drawText("D-15 BAGS RECEIVED", margin, y, h); y += 16f
+                    f.d15Entries.forEachIndexed { i, e -> line("Batch ${i + 1} • ${e.time.ifBlank { "—" }}", "${e.pieces.ifBlank { "—" }} pcs") }
+                    line("Total D-15 Bags", "${f.d15Entries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs")
+                    y += 5f; canvas.drawText("BAGS OFFLOAD", margin, y, h); y += 16f
+                    f.offloadEntries.forEachIndexed { i, e -> line("${i + 1}. ${e.startTime.ifBlank { "—" }} → ${e.endTime.ifBlank { "—" }}", "${e.pieces.ifBlank { "—" }} pcs") }
+                    line("Total Offloaded", "${f.offloadEntries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs")
+                }
+                y += 5f; canvas.drawText("NOTES", margin, y, h); y += 18f
+                canvas.drawText(f.notes.ifBlank { "No notes" }.take(85), margin + 8f, y, body)
+            }
+            pdf.finishPage(page)
+            val dir = File(context.cacheDir, "shared_pdfs").apply { mkdirs() }
+            val safeDate = shiftDate.replace("/", "-")
+            val file = File(dir, "Daily_Shift_Report_${safeDate}_${shiftStart.replace(":", "")}-${shiftEnd.replace(":", "")}.pdf")
+            FileOutputStream(file).use { pdf.writeTo(it) }
+            pdf.close()
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "Daily Shift Report - $shiftDate - $shiftStart to $shiftEnd")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Share Daily Shift Report"))
+        } catch (e: Exception) {
+            Toast.makeText(context, "Unable to create shift PDF: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+ 
     fun prepareEdit(flight: SavedFlight) {
         selectedFlight = flight
         selectedTaskType = flight.taskType
@@ -1153,7 +1382,10 @@ fun RampDutyApp() {
         stamps.clear()
         bagCounts.clear()
         bagCounts.putAll(flight.bagCounts)
- 
+        d15Entries.clear()
+        d15Entries.addAll(flight.d15Entries)
+        offloadEntries.clear()
+        offloadEntries.addAll(flight.offloadEntries)
         stamps.addAll(
             namesForTask(flight.taskType).map { name ->
                 Stamp(
@@ -1173,7 +1405,7 @@ fun RampDutyApp() {
  
         val d15CountMissing =
             namesForTask(selectedTaskType).contains("D-15 Baggage Received") &&
-                bagCounts["D-15 Baggage Received"].isNullOrBlank()
+                d15Entries.none { it.pieces.isNotBlank() }
  
         if (missing.isEmpty() && !d15CountMissing) {
             if (isUpdate) updateSavedFlight() else saveNewFlight()
@@ -1207,6 +1439,7 @@ fun RampDutyApp() {
             AppPage.ACTIVE_FLIGHT -> page = AppPage.FLIGHT_SETUP
             AppPage.FLIGHT_SETUP -> goHome()
             AppPage.HISTORY -> goHome()
+            AppPage.SHIFT_REPORT -> goHome()
             AppPage.HOME -> Unit
         }
     }
@@ -1314,6 +1547,13 @@ fun RampDutyApp() {
                         onClick = { goHistory() },
                         icon = { Text("◷") },
                         label = { Text("History") }
+                    )
+ 
+                    NavigationBarItem(
+                        selected = page == AppPage.SHIFT_REPORT,
+                        onClick = { page = AppPage.SHIFT_REPORT },
+                        icon = { Text("▤") },
+                        label = { Text("Shift Report") }
                     )
                 }
             }
@@ -1470,46 +1710,52 @@ fun RampDutyApp() {
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(9.dp)
                             ) {
-                                items(
-                                    displayRowsForTask(selectedTaskType),
-                                    key = { "${it.left}-${it.right ?: ""}" }
-                                ) { row ->
-                                    val leftIndex = stamps.indexOfFirst { it.name == row.left }
-                                    val rightIndex = row.right?.let { rightName ->
-                                        stamps.indexOfFirst { it.name == rightName }
-                                    } ?: -1
+                            items(
+                                displayRowsForTask(selectedTaskType),
+                                key = { "active-${it.left}-${it.right ?: ""}" }
+                            ) { row ->
+                                val leftIndex = stamps.indexOfFirst { it.name == row.left }
+                                val rightIndex = row.right?.let { rightName ->
+                                    stamps.indexOfFirst { it.name == rightName }
+                                } ?: -1
  
+                                if (row.left == "D-15 Baggage Received") {
+                                    D15BagsCard(
+                                        entries = d15Entries,
+                                        onAdd = { d15Entries.add(D15Entry("", currentTime())) },
+                                        onPiecesChange = { index, value ->
+                                            if (value.all { it.isDigit() }) d15Entries[index] = d15Entries[index].copy(pieces = value)
+                                        },
+                                        onTimeChange = { index, value -> d15Entries[index] = d15Entries[index].copy(time = value) },
+                                        onDelete = { index -> d15Entries.removeAt(index) }
+                                    )
+                                } else {
                                     TaskTimingRow(
                                         row = row,
                                         leftStamp = stamps.getOrNull(leftIndex),
                                         rightStamp = stamps.getOrNull(rightIndex),
                                         leftBagCount = bagCounts[row.left] ?: "",
-                                        onLeftBagCountChange = { value ->
-                                            if (value.all { it.isDigit() }) {
-                                                bagCounts[row.left] = value
-                                            }
-                                        },
-                                        onLeftRecord = {
-                                            if (leftIndex >= 0) record(leftIndex)
-                                        },
-                                        onLeftEdit = {
-                                            if (leftIndex >= 0) editStamp(leftIndex)
-                                        },
-                                        onLeftReset = {
-                                            if (leftIndex >= 0) resetStamp(leftIndex)
-                                        },
-                                        onRightRecord = {
-                                            if (rightIndex >= 0) record(rightIndex)
-                                        },
-                                        onRightEdit = {
-                                            if (rightIndex >= 0) editStamp(rightIndex)
-                                        },
-                                        onRightReset = {
-                                            if (rightIndex >= 0) resetStamp(rightIndex)
-                                        },
+                                        onLeftBagCountChange = { value -> if (value.all { it.isDigit() }) bagCounts[row.left] = value },
+                                        onLeftRecord = { if (leftIndex >= 0) record(leftIndex) },
+                                        onLeftEdit = { if (leftIndex >= 0) editStamp(leftIndex) },
+                                        onLeftReset = { if (leftIndex >= 0) resetStamp(leftIndex) },
+                                        onRightRecord = { if (rightIndex >= 0) record(rightIndex) },
+                                        onRightEdit = { if (rightIndex >= 0) editStamp(rightIndex) },
+                                        onRightReset = { if (rightIndex >= 0) resetStamp(rightIndex) },
                                         taskType = selectedTaskType
                                     )
                                 }
+ 
+                                if (row.left == "Last Bag Received" && (selectedTaskType == "DEPARTURE" || selectedTaskType == "TURNAROUND")) {
+                                    Spacer(Modifier.height(9.dp))
+                                    BagsOffloadCard(
+                                        entries = offloadEntries,
+                                        onAdd = { offloadEntries.add(OffloadEntry(startTime = currentTime())) },
+                                        onChange = { index, entry -> offloadEntries[index] = entry },
+                                        onDelete = { index -> offloadEntries.removeAt(index) }
+                                    )
+                                }
+                            }
  
                                 item {
                                     val timingMap = stamps.associate {
@@ -1751,6 +1997,11 @@ fun RampDutyApp() {
                                         )
                                     }
  
+                            if (flight.taskType == "DEPARTURE" || flight.taskType == "TURNAROUND") {
+                                item { SavedD15Card(flight.d15Entries) }
+                                item { SavedOffloadCard(flight.offloadEntries) }
+                            }
+ 
                                     item {
                                         SummaryCard(
                                             taskType = flight.taskType,
@@ -1847,6 +2098,62 @@ fun RampDutyApp() {
                                             Text("DELETE FLIGHT")
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+ 
+                    AppPage.SHIFT_REPORT -> {
+                        val shiftFlights = flightsForShift()
+                        Scaffold(
+                            topBar = { TopAppBar(title = { Text("Daily Shift Report") }) }
+                        ) { padding ->
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+                                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                item {
+                                    Text("Select shift window", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
+                                    Text("Flights saved within this date and time are included automatically.")
+                                }
+                                item {
+                                    OutlinedTextField(value = shiftDate, onValueChange = { shiftDate = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Date (dd/MM/yyyy)") }, singleLine = true)
+                                }
+                                item {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        OutlinedTextField(value = shiftStart, onValueChange = { shiftStart = it }, modifier = Modifier.weight(1f), label = { Text("Shift Start") }, singleLine = true)
+                                        OutlinedTextField(value = shiftEnd, onValueChange = { shiftEnd = it }, modifier = Modifier.weight(1f), label = { Text("Shift End") }, singleLine = true)
+                                    }
+                                }
+                                item {
+                                    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(16.dp)) {
+                                            Text("Shift Summary", fontWeight = FontWeight.Bold, color = Navy)
+                                            Spacer(Modifier.height(8.dp))
+                                            Text("Total Flights: ${shiftFlights.size}")
+                                            Text("Arrival: ${shiftFlights.count { it.taskType == "ARRIVAL" }}")
+                                            Text("Departure: ${shiftFlights.count { it.taskType == "DEPARTURE" }}")
+                                            Text("Turnaround: ${shiftFlights.count { it.taskType == "TURNAROUND" }}")
+                                            val incomplete = shiftFlights.count { f -> getTime(f.timings, "Task Start", "Task Started").isNullOrBlank() || getTime(f.timings, "Task End").isNullOrBlank() }
+                                            Text("Incomplete Tasks: $incomplete", color = if (incomplete == 0) Color(0xFF087A2F) else Color(0xFFD31313), fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                                if (shiftFlights.isEmpty()) {
+                                    item { Text("No saved flights found for this shift.") }
+                                } else {
+                                    items(shiftFlights, key = { "shift-${it.storageIndex}-${it.date}" }) { flight ->
+                                        HistoryFlightCard(flight = flight, onClick = { selectedFlight = flight; page = AppPage.HISTORY_DETAILS })
+                                    }
+                                }
+                                item {
+                                    Button(
+                                        onClick = { shareShiftReportAsPdf(shiftFlights) },
+                                        enabled = shiftFlights.isNotEmpty(),
+                                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Navy)
+                                    ) { Text("GENERATE & SHARE SHIFT PDF") }
                                 }
                             }
                         }
@@ -1950,40 +2257,42 @@ fun RampDutyApp() {
                                     key = { "edit-${it.left}-${it.right ?: ""}" }
                                 ) { row ->
                                     val leftIndex = stamps.indexOfFirst { it.name == row.left }
-                                    val rightIndex = row.right?.let { rightName ->
-                                        stamps.indexOfFirst { it.name == rightName }
-                                    } ?: -1
+                                    val rightIndex = row.right?.let { rightName -> stamps.indexOfFirst { it.name == rightName } } ?: -1
  
-                                    TaskTimingRow(
-                                        row = row,
-                                        leftStamp = stamps.getOrNull(leftIndex),
-                                        rightStamp = stamps.getOrNull(rightIndex),
-                                        leftBagCount = bagCounts[row.left] ?: "",
-                                        onLeftBagCountChange = { value ->
-                                            if (value.all { it.isDigit() }) {
-                                                bagCounts[row.left] = value
-                                            }
-                                        },
-                                        onLeftRecord = {
-                                            if (leftIndex >= 0) record(leftIndex)
-                                        },
-                                        onLeftEdit = {
-                                            if (leftIndex >= 0) editStamp(leftIndex)
-                                        },
-                                        onLeftReset = {
-                                            if (leftIndex >= 0) resetStamp(leftIndex)
-                                        },
-                                        onRightRecord = {
-                                            if (rightIndex >= 0) record(rightIndex)
-                                        },
-                                        onRightEdit = {
-                                            if (rightIndex >= 0) editStamp(rightIndex)
-                                        },
-                                        onRightReset = {
-                                            if (rightIndex >= 0) resetStamp(rightIndex)
-                                        },
-                                        taskType = selectedTaskType
-                                    )
+                                    if (row.left == "D-15 Baggage Received") {
+                                        D15BagsCard(
+                                            entries = d15Entries,
+                                            onAdd = { d15Entries.add(D15Entry("", currentTime())) },
+                                            onPiecesChange = { index, value -> if (value.all { it.isDigit() }) d15Entries[index] = d15Entries[index].copy(pieces = value) },
+                                            onTimeChange = { index, value -> d15Entries[index] = d15Entries[index].copy(time = value) },
+                                            onDelete = { index -> d15Entries.removeAt(index) }
+                                        )
+                                    } else {
+                                        TaskTimingRow(
+                                            row = row,
+                                            leftStamp = stamps.getOrNull(leftIndex),
+                                            rightStamp = stamps.getOrNull(rightIndex),
+                                            leftBagCount = bagCounts[row.left] ?: "",
+                                            onLeftBagCountChange = { value -> if (value.all { it.isDigit() }) bagCounts[row.left] = value },
+                                            onLeftRecord = { if (leftIndex >= 0) record(leftIndex) },
+                                            onLeftEdit = { if (leftIndex >= 0) editStamp(leftIndex) },
+                                            onLeftReset = { if (leftIndex >= 0) resetStamp(leftIndex) },
+                                            onRightRecord = { if (rightIndex >= 0) record(rightIndex) },
+                                            onRightEdit = { if (rightIndex >= 0) editStamp(rightIndex) },
+                                            onRightReset = { if (rightIndex >= 0) resetStamp(rightIndex) },
+                                            taskType = selectedTaskType
+                                        )
+                                    }
+ 
+                                    if (row.left == "Last Bag Received" && (selectedTaskType == "DEPARTURE" || selectedTaskType == "TURNAROUND")) {
+                                        Spacer(Modifier.height(9.dp))
+                                        BagsOffloadCard(
+                                            entries = offloadEntries,
+                                            onAdd = { offloadEntries.add(OffloadEntry(startTime = currentTime())) },
+                                            onChange = { index, entry -> offloadEntries[index] = entry },
+                                            onDelete = { index -> offloadEntries.removeAt(index) }
+                                        )
+                                    }
                                 }
  
                                 item {
@@ -2824,6 +3133,82 @@ fun TimingCard(
                     }
                 }
             }
+        }
+    }
+}
+ 
+@Composable
+fun D15BagsCard(
+    entries: List<D15Entry>,
+    onAdd: () -> Unit,
+    onPiecesChange: (Int, String) -> Unit,
+    onTimeChange: (Int, String) -> Unit,
+    onDelete: (Int) -> Unit
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text("D-15 Bags Received", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = RoyalBlue)
+            Spacer(Modifier.height(8.dp))
+            if (entries.isEmpty()) Text("Add each late baggage batch with pieces and received time.", style = MaterialTheme.typography.bodySmall)
+            entries.forEachIndexed { index, entry ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(value = entry.pieces, onValueChange = { onPiecesChange(index, it) }, modifier = Modifier.weight(1f), label = { Text("Pieces") }, singleLine = true)
+                    OutlinedTextField(value = entry.time, onValueChange = { onTimeChange(index, it) }, modifier = Modifier.weight(1f), label = { Text("Time") }, singleLine = true)
+                    TextButton(onClick = { onDelete(index) }) { Text("DEL", color = Color(0xFFD31313)) }
+                }
+            }
+            OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("+ ADD ENTRY") }
+            Spacer(Modifier.height(6.dp))
+            Text("Total D-15 Bags: ${entries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs", fontWeight = FontWeight.Bold, color = RoyalBlue)
+        }
+    }
+}
+ 
+@Composable
+fun BagsOffloadCard(
+    entries: List<OffloadEntry>,
+    onAdd: () -> Unit,
+    onChange: (Int, OffloadEntry) -> Unit,
+    onDelete: (Int) -> Unit
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text("Bags Offload", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFFC66A00))
+            Spacer(Modifier.height(8.dp))
+            entries.forEachIndexed { index, entry ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(value = entry.startTime, onValueChange = { onChange(index, entry.copy(startTime = it)) }, modifier = Modifier.weight(1f), label = { Text("Start") }, singleLine = true)
+                    OutlinedTextField(value = entry.endTime, onValueChange = { onChange(index, entry.copy(endTime = it)) }, modifier = Modifier.weight(1f), label = { Text("End") }, singleLine = true)
+                    OutlinedTextField(value = entry.pieces, onValueChange = { if (it.all { c -> c.isDigit() }) onChange(index, entry.copy(pieces = it)) }, modifier = Modifier.weight(1f), label = { Text("Pieces") }, singleLine = true)
+                    TextButton(onClick = { onDelete(index) }) { Text("DEL", color = Color(0xFFD31313)) }
+                }
+            }
+            OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("+ ADD ENTRY") }
+            Spacer(Modifier.height(6.dp))
+            Text("Total Offloaded: ${entries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs", fontWeight = FontWeight.Bold, color = Color(0xFFC66A00))
+        }
+    }
+}
+ 
+@Composable
+fun SavedD15Card(entries: List<D15Entry>) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Text("D-15 Bags Received", fontWeight = FontWeight.Bold, color = RoyalBlue)
+            entries.forEachIndexed { i, e -> Text("Batch ${i + 1}: ${e.pieces.ifBlank { "—" }} pcs • ${e.time.ifBlank { "—" }}") }
+            Text("Total: ${entries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+ 
+@Composable
+fun SavedOffloadCard(entries: List<OffloadEntry>) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Bags Offload", fontWeight = FontWeight.Bold, color = Color(0xFFC66A00))
+            if (entries.isEmpty()) Text("No offload entries")
+            entries.forEachIndexed { i, e -> Text("${i + 1}. ${e.startTime.ifBlank { "—" }} → ${e.endTime.ifBlank { "—" }} • ${e.pieces.ifBlank { "—" }} pcs") }
+            Text("Total Offloaded: ${entries.sumOf { it.pieces.toIntOrNull() ?: 0 }} pcs", fontWeight = FontWeight.Bold)
         }
     }
 }
