@@ -172,39 +172,35 @@ fun RampDutyApp() {
         "Off Block"
     )
  
-    val freighterNames = listOf(
-        "Task Start",
-        "Task End",
-        "On Block",
-        "Chocks On",
-        "Step Start",
-        "Step End",
-        "GPU Start",
-        "GPU End",
-        "A/C Start",
-        "A/C End",
-        "Hold Open",
-        "Hold Close",
-        "LDL Start",
-        "LDL End",
-        "MDL Start",
-        "MDL End",
-        "Conveyor Start",
-        "Conveyor End",
-        "Ofldng Start",
-        "Ofldng End",
-        "Loading Start",
-        "Loading End",
-        "LIR Received",
-        "Cargo Received",
-        "Chocks Off"
+    val freighterArrivalNames = listOf(
+        "Task Start", "Task End", "On Block", "Chocks On",
+        "Step Start", "Hold Open", "GPU Start", "A/C Start",
+        "LDL Start", "LDL End", "MDL Start", "MDL End",
+        "Conveyor Start", "Conveyor End", "Ofldng Start", "Ofldng End"
+    )
+
+    val freighterDepartureNames = listOf(
+        "Task Start", "Task End", "Step End", "GPU End", "A/C End",
+        "Hold Open", "Hold Close", "LDL Start", "LDL End",
+        "MDL Start", "MDL End", "Conveyor Start", "Conveyor End",
+        "Loading Start", "Loading End", "LIR Received", "Cargo Received", "Chocks Off"
+    )
+
+    val freighterTurnaroundNames = listOf(
+        "Task Start", "Task End", "On Block", "Chocks On",
+        "Step Start", "Step End", "GPU Start", "GPU End", "A/C Start", "A/C End",
+        "Hold Open", "Hold Close", "LDL Start", "LDL End", "MDL Start", "MDL End",
+        "Conveyor Start", "Conveyor End", "Ofldng Start", "Ofldng End",
+        "Loading Start", "Loading End", "LIR Received", "Cargo Received", "Chocks Off"
     )
  
     val allKnownNames = (
         arrivalNames +
             departureNames +
             turnaroundNames +
-            freighterNames +
+            freighterArrivalNames +
+            freighterDepartureNames +
+            freighterTurnaroundNames +
             listOf(
                 "Task Started",
                 "GPU Disconnected",
@@ -303,7 +299,31 @@ fun RampDutyApp() {
                 TaskDisplayRow("Off Block")
             )
  
-            "FREIGHTER" -> listOf(
+            "FREIGHTER_ARRIVAL" -> listOf(
+                TaskDisplayRow("Task Start", "Task End"),
+                TaskDisplayRow("On Block", "Chocks On"),
+                TaskDisplayRow("Step Start", "Hold Open"),
+                TaskDisplayRow("GPU Start", "A/C Start"),
+                TaskDisplayRow("LDL Start", "LDL End"),
+                TaskDisplayRow("MDL Start", "MDL End"),
+                TaskDisplayRow("Conveyor Start", "Conveyor End"),
+                TaskDisplayRow("Ofldng Start", "Ofldng End")
+            )
+
+            "FREIGHTER_DEPARTURE" -> listOf(
+                TaskDisplayRow("Task Start", "Task End"),
+                TaskDisplayRow("Step End"),
+                TaskDisplayRow("GPU End", "A/C End"),
+                TaskDisplayRow("Hold Open", "Hold Close"),
+                TaskDisplayRow("LDL Start", "LDL End"),
+                TaskDisplayRow("MDL Start", "MDL End"),
+                TaskDisplayRow("Conveyor Start", "Conveyor End"),
+                TaskDisplayRow("Loading Start", "Loading End"),
+                TaskDisplayRow("LIR Received", "Cargo Received"),
+                TaskDisplayRow("Chocks Off")
+            )
+
+            "FREIGHTER_TURNAROUND" -> listOf(
                 TaskDisplayRow("Task Start", "Task End"),
                 TaskDisplayRow("On Block", "Chocks On"),
                 TaskDisplayRow("Step Start", "Step End"),
@@ -328,7 +348,9 @@ fun RampDutyApp() {
             "ARRIVAL" -> arrivalNames
             "DEPARTURE" -> departureNames
             "TURNAROUND" -> turnaroundNames
-            "FREIGHTER" -> freighterNames
+            "FREIGHTER_ARRIVAL" -> freighterArrivalNames
+            "FREIGHTER_DEPARTURE" -> freighterDepartureNames
+            "FREIGHTER_TURNAROUND" -> freighterTurnaroundNames
             else -> emptyList()
         }
     }
@@ -487,6 +509,7 @@ fun RampDutyApp() {
  
             var taskType = item.optString("taskType", "")
             if (taskType.isBlank()) taskType = "TURNAROUND"
+            if (taskType == "FREIGHTER") taskType = "FREIGHTER_TURNAROUND"
  
             list.add(
                 SavedFlight(
@@ -736,7 +759,7 @@ fun RampDutyApp() {
             appendLine("Ramp Task Time Tracker")
             appendLine()
             appendLine("Task: ${flight.taskType}")
-            if (flight.taskType == "TURNAROUND") {
+            if (flight.taskType == "TURNAROUND" || flight.taskType == "FREIGHTER_TURNAROUND") {
                 appendLine("Arrival Flight#: ${flight.flightNo}")
                 appendLine("STA: ${flight.sta.ifBlank { "—" }}")
                 appendLine("Departure Flight#: ${flight.departureFlightNo.ifBlank { "—" }}")
@@ -745,10 +768,8 @@ fun RampDutyApp() {
                 appendLine("Flight: ${flight.flightNo}")
                 if (flight.taskType == "ARRIVAL") appendLine("STA: ${flight.sta.ifBlank { "—" }}")
                 if (flight.taskType == "DEPARTURE") appendLine("STD: ${flight.std.ifBlank { "—" }}")
-                if (flight.taskType == "FREIGHTER") {
-                    appendLine("STA: ${flight.sta.ifBlank { "—" }}")
-                    appendLine("STD: ${flight.std.ifBlank { "—" }}")
-                }
+                if (flight.taskType == "FREIGHTER_ARRIVAL") appendLine("STA: ${flight.sta.ifBlank { "—" }}")
+                if (flight.taskType == "FREIGHTER_DEPARTURE") appendLine("STD: ${flight.std.ifBlank { "—" }}")
             }
             appendLine("Registration: ${flight.registration}")
             appendLine("Aircraft: ${flight.aircraft}")
@@ -823,6 +844,25 @@ fun RampDutyApp() {
                 )
             }
  
+            if (flight.taskType.startsWith("FREIGHTER_")) {
+                appendLine()
+                appendLine("Freighter Task Durations")
+                listOf(
+                    "LDL" to ("LDL Start" to "LDL End"),
+                    "MDL" to ("MDL Start" to "MDL End"),
+                    "Conveyor" to ("Conveyor Start" to "Conveyor End"),
+                    "Offloading" to ("Ofldng Start" to "Ofldng End"),
+                    "Loading" to ("Loading Start" to "Loading End")
+                ).forEach { (label, pair) ->
+                    val a = getTime(flight.timings, pair.first)
+                    val b = getTime(flight.timings, pair.second)
+                    if (!a.isNullOrBlank() || !b.isNullOrBlank()) appendLine("$label: ${formatDuration(secondsBetween(a, b))}")
+                }
+                if (flight.taskType == "FREIGHTER_TURNAROUND") {
+                    appendLine("Freighter Turnaround (On Block → Chocks Off): ${formatDuration(secondsBetween(getTime(flight.timings, "On Block"), getTime(flight.timings, "Chocks Off")))}")
+                }
+            }
+
             appendLine()
             appendLine(
                 "Notes: ${
@@ -1112,9 +1152,13 @@ fun RampDutyApp() {
                 infoRow("Departure Flight#", flight.departureFlightNo.ifBlank { "—" }, "STD", flight.std.ifBlank { "—" })
             } else if (flight.taskType == "ARRIVAL") {
                 infoRow("Flight#", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
-            } else if (flight.taskType == "FREIGHTER") {
+            } else if (flight.taskType == "FREIGHTER_ARRIVAL") {
                 infoRow("Flight#", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
-                infoRow("STD", flight.std.ifBlank { "—" }, "Operation", "Freighter")
+            } else if (flight.taskType == "FREIGHTER_DEPARTURE") {
+                infoRow("Flight#", flight.flightNo, "STD", flight.std.ifBlank { "—" })
+            } else if (flight.taskType == "FREIGHTER_TURNAROUND") {
+                infoRow("Arrival Flight#", flight.flightNo, "STA", flight.sta.ifBlank { "—" })
+                infoRow("Departure Flight#", flight.departureFlightNo.ifBlank { "—" }, "STD", flight.std.ifBlank { "—" })
             } else {
                 infoRow("Flight#", flight.flightNo, "STD", flight.std.ifBlank { "—" })
             }
@@ -1206,6 +1250,25 @@ fun RampDutyApp() {
                 )
             }
  
+            if (flight.taskType.startsWith("FREIGHTER_")) {
+                y += 4f
+                sectionTitle("FREIGHTER TASK DURATIONS")
+                listOf(
+                    "LDL" to ("LDL Start" to "LDL End"),
+                    "MDL" to ("MDL Start" to "MDL End"),
+                    "Conveyor" to ("Conveyor Start" to "Conveyor End"),
+                    "Offloading" to ("Ofldng Start" to "Ofldng End"),
+                    "Loading" to ("Loading Start" to "Loading End")
+                ).forEach { (label, pair) ->
+                    val a = getTime(flight.timings, pair.first)
+                    val b = getTime(flight.timings, pair.second)
+                    if (!a.isNullOrBlank() || !b.isNullOrBlank()) performanceRow(label, formatDuration(secondsBetween(a, b)))
+                }
+                if (flight.taskType == "FREIGHTER_TURNAROUND") {
+                    performanceRow("On Block → Chocks Off", formatDuration(secondsBetween(getTime(flight.timings, "On Block"), getTime(flight.timings, "Chocks Off"))))
+                }
+            }
+
             y += 4f
             sectionTitle("NOTES")
             newPageIfNeeded(58f)
@@ -1361,7 +1424,10 @@ fun RampDutyApp() {
             val arrivals = flights.count { it.taskType == "ARRIVAL" }
             val departures = flights.count { it.taskType == "DEPARTURE" }
             val turnarounds = flights.count { it.taskType == "TURNAROUND" }
-            val freighters = flights.count { it.taskType == "FREIGHTER" }
+            val freighters = flights.count { it.taskType.startsWith("FREIGHTER_") }
+            val freighterArrivals = flights.count { it.taskType == "FREIGHTER_ARRIVAL" }
+            val freighterDepartures = flights.count { it.taskType == "FREIGHTER_DEPARTURE" }
+            val freighterTurnarounds = flights.count { it.taskType == "FREIGHTER_TURNAROUND" }
             val incomplete = flights.count { f -> getTime(f.timings, "Task Start", "Task Started").isNullOrBlank() || getTime(f.timings, "Task End").isNullOrBlank() }
             newPage("DAILY SHIFT REPORT")
             canvas.drawRoundRect(RectF(margin, y, pageWidth - margin, y + 86f), 10f, 10f, Paint().apply { color = pale })
@@ -1369,14 +1435,14 @@ fun RampDutyApp() {
             canvas.drawText("Date: $shiftDate", margin + 12f, y + 39f, body)
             canvas.drawText("Shift: $shiftStart - $shiftEnd", margin + 12f, y + 57f, body)
             canvas.drawText("Total Flights: ${flights.size}", 330f, y + 39f, h)
-            canvas.drawText("A $arrivals • D $departures • T $turnarounds • F $freighters", 330f, y + 57f, body)
+            canvas.drawText("A $arrivals • D $departures • T $turnarounds • F $freighters ($freighterArrivals/$freighterDepartures/$freighterTurnarounds)", 330f, y + 57f, body)
             canvas.drawText("Incomplete: $incomplete", 330f, y + 75f, Paint(body).apply { color = if (incomplete == 0) AndroidColor.rgb(0,120,60) else AndroidColor.RED })
             y += 104f
             canvas.drawText("FLIGHT SUMMARY", margin, y, h); y += 16f
             flights.forEachIndexed { index, f ->
                 ensure(42f)
                 if (index % 2 == 0) canvas.drawRect(margin, y - 4f, pageWidth - margin, y + 31f, Paint().apply { color = AndroidColor.rgb(248,250,253) })
-                val flightLabel = if (f.taskType == "TURNAROUND") "${f.flightNo} / ${f.departureFlightNo}" else f.flightNo
+                val flightLabel = if (f.taskType == "TURNAROUND" || f.taskType == "FREIGHTER_TURNAROUND") "${f.flightNo} / ${f.departureFlightNo}" else f.flightNo
                 canvas.drawText("${index + 1}. $flightLabel", margin + 8f, y + 10f, Paint(body).apply { typeface = Typeface.DEFAULT_BOLD })
                 canvas.drawText(f.taskType, 185f, y + 10f, body)
                 canvas.drawText("${f.registration} • Stand ${f.stand}", 275f, y + 10f, body)
@@ -1387,7 +1453,7 @@ fun RampDutyApp() {
             }
             flights.forEach { f ->
                 newPage("DAILY SHIFT REPORT • FLIGHT DETAILS")
-                val flightLabel = if (f.taskType == "TURNAROUND") "${f.flightNo} / ${f.departureFlightNo}" else f.flightNo
+                val flightLabel = if (f.taskType == "TURNAROUND" || f.taskType == "FREIGHTER_TURNAROUND") "${f.flightNo} / ${f.departureFlightNo}" else f.flightNo
                 canvas.drawText("$flightLabel • ${f.taskType}", margin, y, h); y += 20f
                 line("A/C Regi / Type", "${f.registration} / ${f.aircraft}")
                 line("Stand", f.stand)
@@ -1697,7 +1763,7 @@ fun RampDutyApp() {
                                     subtitle = "Freighter handling timings",
                                     symbol = "✈ ▣",
                                     onClick = {
-                                        startNewTask("FREIGHTER")
+                                        startNewTask("FREIGHTER_ARRIVAL")
                                     }
                                 )
                             }
@@ -1721,6 +1787,7 @@ fun RampDutyApp() {
                             onRegistrationChange = { registration = it },
                             onAircraftChange = { aircraft = it },
                             onStandChange = { stand = it },
+                            onTaskTypeChange = { selectedTaskType = it },
                             onBack = { goHome() },
                             onStart = {
                                 initializeStampsForTask(selectedTaskType)
@@ -1735,7 +1802,7 @@ fun RampDutyApp() {
                                 val activeTheme = when (selectedTaskType) {
                                     "ARRIVAL" -> Color(0xFF087A2F)
                                     "DEPARTURE" -> Color(0xFF4B1FA3)
-                                    "FREIGHTER" -> Color(0xFFE56A00)
+                                    "FREIGHTER_ARRIVAL", "FREIGHTER_DEPARTURE", "FREIGHTER_TURNAROUND" -> Color(0xFFD99A00)
                                     else -> Color(0xFFD31313)
                                 }
  
@@ -1747,7 +1814,7 @@ fun RampDutyApp() {
                                     ),
                                     title = {
                                         Column {
-                                            Text(selectedTaskType)
+                                            Text(selectedTaskType.replace("_", " • "))
                                             Text(
                                                 "$flightNo • Stand $stand",
                                                 style = MaterialTheme.typography.labelMedium
@@ -1846,7 +1913,10 @@ fun RampDutyApp() {
                                         taskType = selectedTaskType,
                                         taskDuration = formatDuration(secondsBetween(taskStart, taskEnd)),
                                         turnaround = formatDuration(
-                                            secondsBetween(onBlock, offBlock)
+                                            secondsBetween(
+                                                onBlock,
+                                                if (selectedTaskType == "FREIGHTER_TURNAROUND") getTime(timingMap, "Chocks Off") else offBlock
+                                            )
                                         ),
                                         localFirst = formatDuration(
                                             secondsBetween(chocksOn, byFirst)
@@ -2205,7 +2275,7 @@ fun RampDutyApp() {
                                             Text("Arrival: ${shiftFlights.count { it.taskType == "ARRIVAL" }}")
                                             Text("Departure: ${shiftFlights.count { it.taskType == "DEPARTURE" }}")
                                             Text("Turnaround: ${shiftFlights.count { it.taskType == "TURNAROUND" }}")
-                                            Text("Freighter: ${shiftFlights.count { it.taskType == "FREIGHTER" }}")
+                                            Text("Freighter: ${shiftFlights.count { it.taskType.startsWith("FREIGHTER_") }} (A ${shiftFlights.count { it.taskType == "FREIGHTER_ARRIVAL" }} / D ${shiftFlights.count { it.taskType == "FREIGHTER_DEPARTURE" }} / T ${shiftFlights.count { it.taskType == "FREIGHTER_TURNAROUND" }})")
                                             val incomplete = shiftFlights.count { f -> getTime(f.timings, "Task Start", "Task Started").isNullOrBlank() || getTime(f.timings, "Task End").isNullOrBlank() }
                                             Text("Incomplete Tasks: $incomplete", color = if (incomplete == 0) Color(0xFF087A2F) else Color(0xFFD31313), fontWeight = FontWeight.Bold)
                                         }
@@ -2502,13 +2572,16 @@ fun FlightSetupScreen(
     onRegistrationChange: (String) -> Unit,
     onAircraftChange: (String) -> Unit,
     onStandChange: (String) -> Unit,
+    onTaskTypeChange: (String) -> Unit,
     onBack: () -> Unit,
     onStart: () -> Unit
 ) {
     val scheduleReady = when (taskType) {
         "ARRIVAL" -> sta.isNotBlank()
         "DEPARTURE" -> std.isNotBlank()
-        "FREIGHTER" -> sta.isNotBlank() && std.isNotBlank()
+        "FREIGHTER_ARRIVAL" -> sta.isNotBlank()
+        "FREIGHTER_DEPARTURE" -> std.isNotBlank()
+        "FREIGHTER_TURNAROUND" -> departureFlightNo.isNotBlank() && sta.isNotBlank() && std.isNotBlank()
         else -> departureFlightNo.isNotBlank() && sta.isNotBlank() && std.isNotBlank()
     }
     val allFieldsReady =
@@ -2518,13 +2591,13 @@ fun FlightSetupScreen(
     val themeColor = when (taskType) {
         "ARRIVAL" -> Color(0xFF087A2F)
         "DEPARTURE" -> Color(0xFF4B1FA3)
-        "FREIGHTER" -> Color(0xFFE56A00)
+        "FREIGHTER_ARRIVAL", "FREIGHTER_DEPARTURE", "FREIGHTER_TURNAROUND" -> Color(0xFFD99A00)
         else -> Color(0xFFD31313)
     }
     val themeDark = when (taskType) {
         "ARRIVAL" -> Color(0xFF04551F)
         "DEPARTURE" -> Color(0xFF2C126B)
-        "FREIGHTER" -> Color(0xFF9A4300)
+        "FREIGHTER_ARRIVAL", "FREIGHTER_DEPARTURE", "FREIGHTER_TURNAROUND" -> Color(0xFF9A6500)
         else -> Color(0xFF9D0808)
     }
  
@@ -2643,7 +2716,7 @@ fun FlightSetupScreen(
  
                         Column {
                             Text(
-                                "$taskType FLIGHT",
+                                "${taskType.replace("_", " • ")} FLIGHT",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = themeColor
@@ -2678,22 +2751,53 @@ fun FlightSetupScreen(
                         rightTitle = "STD", rightHint = "HH:mm", rightSymbol = "◷"
                     )
                 }
-            } else if (taskType == "FREIGHTER") {
+            } else if (taskType.startsWith("FREIGHTER_")) {
                 item {
-                    FlightSetupFieldPair(
-                        leftValue = flightNo, leftOnValueChange = onFlightNoChange,
-                        leftTitle = "Flight#", leftHint = "Flight no.", leftSymbol = "✈",
-                        rightValue = sta, rightOnValueChange = onStaChange,
-                        rightTitle = "STA", rightHint = "HH:mm", rightSymbol = "◷"
-                    )
+                    Text("Cargo Operation", fontWeight = FontWeight.Bold, color = themeColor)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            "FREIGHTER_ARRIVAL" to "ARRIVAL",
+                            "FREIGHTER_DEPARTURE" to "DEPARTURE",
+                            "FREIGHTER_TURNAROUND" to "TURNAROUND"
+                        ).forEach { (type, label) ->
+                            FilterChip(
+                                selected = taskType == type,
+                                onClick = { onTaskTypeChange(type) },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
                 }
-                item {
-                    FlightSetupFieldPair(
-                        leftValue = std, leftOnValueChange = onStdChange,
-                        leftTitle = "STD", leftHint = "HH:mm", leftSymbol = "◷",
-                        rightValue = "", rightOnValueChange = {},
-                        rightTitle = "Operation", rightHint = "Freighter", rightSymbol = "▣"
-                    )
+                if (taskType == "FREIGHTER_TURNAROUND") {
+                    item {
+                        FlightSetupFieldPair(
+                            leftValue = flightNo, leftOnValueChange = onFlightNoChange,
+                            leftTitle = "Arrival Flight#", leftHint = "Flight no.", leftSymbol = "✈",
+                            rightValue = sta, rightOnValueChange = onStaChange,
+                            rightTitle = "STA", rightHint = "HH:mm", rightSymbol = "◷"
+                        )
+                    }
+                    item {
+                        FlightSetupFieldPair(
+                            leftValue = departureFlightNo, leftOnValueChange = onDepartureFlightNoChange,
+                            leftTitle = "Departure Flight#", leftHint = "Flight no.", leftSymbol = "✈",
+                            rightValue = std, rightOnValueChange = onStdChange,
+                            rightTitle = "STD", rightHint = "HH:mm", rightSymbol = "◷"
+                        )
+                    }
+                } else {
+                    item {
+                        FlightSetupFieldPair(
+                            leftValue = flightNo, leftOnValueChange = onFlightNoChange,
+                            leftTitle = "Flight#", leftHint = "Flight no.", leftSymbol = "✈",
+                            rightValue = if (taskType == "FREIGHTER_ARRIVAL") sta else std,
+                            rightOnValueChange = if (taskType == "FREIGHTER_ARRIVAL") onStaChange else onStdChange,
+                            rightTitle = if (taskType == "FREIGHTER_ARRIVAL") "STA" else "STD",
+                            rightHint = "HH:mm", rightSymbol = "◷"
+                        )
+                    }
                 }
             } else {
                 item {
@@ -2903,6 +3007,10 @@ fun OperationCard(
         "DEPARTURE" -> Brush.horizontalGradient(
             listOf(Color(0xFF2C126B), Color(0xFF4B1FA3))
         )
+
+        "FREIGHTER" -> Brush.horizontalGradient(
+            listOf(Color(0xFF9A6500), Color(0xFFD99A00))
+        )
  
         else -> Brush.horizontalGradient(
             listOf(Color(0xFF9D0808), Color(0xFFD31313))
@@ -2969,7 +3077,7 @@ fun TaskBadge(taskType: String) {
         color = PaleBlue
     ) {
         Text(
-            taskType,
+            taskType.replace("_", " • "),
             modifier = Modifier.padding(
                 horizontal = 16.dp,
                 vertical = 8.dp
@@ -2998,7 +3106,7 @@ fun TaskTimingRow(
     val themeColor = when (taskType) {
         "ARRIVAL" -> Color(0xFF087A2F)
         "DEPARTURE" -> Color(0xFF4B1FA3)
-        "FREIGHTER" -> Color(0xFFE56A00)
+        "FREIGHTER_ARRIVAL", "FREIGHTER_DEPARTURE", "FREIGHTER_TURNAROUND" -> Color(0xFFD99A00)
         else -> Color(0xFFD31313)
     }
  
@@ -3463,9 +3571,13 @@ fun FlightInfoCard(
                 detailPair("Departure Flight#", flight.departureFlightNo, "STD", flight.std)
             } else if (flight.taskType == "ARRIVAL") {
                 detailPair("Flight#", flight.flightNo, "STA", flight.sta)
-            } else if (flight.taskType == "FREIGHTER") {
+            } else if (flight.taskType == "FREIGHTER_ARRIVAL") {
                 detailPair("Flight#", flight.flightNo, "STA", flight.sta)
-                detailPair("STD", flight.std, "Operation", "Freighter")
+            } else if (flight.taskType == "FREIGHTER_DEPARTURE") {
+                detailPair("Flight#", flight.flightNo, "STD", flight.std)
+            } else if (flight.taskType == "FREIGHTER_TURNAROUND") {
+                detailPair("Arrival Flight#", flight.flightNo, "STA", flight.sta)
+                detailPair("Departure Flight#", flight.departureFlightNo, "STD", flight.std)
             } else {
                 detailPair("Flight#", flight.flightNo, "STD", flight.std)
             }
