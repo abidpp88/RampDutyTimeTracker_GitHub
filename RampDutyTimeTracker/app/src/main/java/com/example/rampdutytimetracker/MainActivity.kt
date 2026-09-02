@@ -1,5 +1,6 @@
 package com.example.rampdutytimetracker
  
+import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -232,9 +233,12 @@ fun RampDutyApp() {
     val d15Entries = remember { mutableStateListOf<D15Entry>() }
     val offloadEntries = remember { mutableStateListOf<OffloadEntry>() }
  
-    var shiftDate by remember { mutableStateOf(SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())) }
+    val todayText = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+    var shiftStartDate by remember { mutableStateOf(todayText) }
+    var shiftEndDate by remember { mutableStateOf(todayText) }
     var shiftStart by remember { mutableStateOf("05:00") }
     var shiftEnd by remember { mutableStateOf("17:00") }
+    var showIncompleteOnly by remember { mutableStateOf(false) }
  
     var selectedFlight by remember { mutableStateOf<SavedFlight?>(null) }
     var historyRefreshKey by remember { mutableIntStateOf(0) }
@@ -384,6 +388,59 @@ fun RampDutyApp() {
  
     fun currentTime(): String {
         return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+    }
+
+    fun parseShiftDate(value: String): Calendar? {
+        return try {
+            val formatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).apply { isLenient = false }
+            val date = formatter.parse(value) ?: return null
+            Calendar.getInstance().apply { time = date }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun showShiftDatePicker(currentValue: String, onSelected: (String) -> Unit) {
+        val calendar = parseShiftDate(currentValue) ?: Calendar.getInstance()
+        DatePickerDialog(
+            context,
+            { _, year, month, day ->
+                onSelected(String.format(Locale.getDefault(), "%02d/%02d/%04d", day, month + 1, year))
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    fun showShiftTimePicker(currentValue: String, onSelected: (String) -> Unit) {
+        val parts = currentValue.split(":")
+        val hour = parts.getOrNull(0)?.toIntOrNull() ?: 0
+        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        TimePickerDialog(
+            context,
+            { _, h, m -> onSelected(String.format(Locale.getDefault(), "%02d:%02d", h, m)) },
+            hour,
+            minute,
+            true
+        ).show()
+    }
+
+    fun nextDate(value: String): String {
+        val calendar = parseShiftDate(value) ?: Calendar.getInstance()
+        calendar.add(Calendar.DAY_OF_MONTH, 1)
+        return SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(calendar.time)
+    }
+
+    fun shiftWindowMillis(): Pair<Long, Long>? {
+        return try {
+            val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).apply { isLenient = false }
+            val start = formatter.parse("$shiftStartDate $shiftStart")?.time ?: return null
+            val end = formatter.parse("$shiftEndDate $shiftEnd")?.time ?: return null
+            if (end < start) null else start to end
+        } catch (_: Exception) {
+            null
+        }
     }
  
     fun displayTime(value: String?): String {
@@ -1364,22 +1421,20 @@ fun RampDutyApp() {
     }
  
     fun flightsForShift(): List<SavedFlight> {
-        fun toMinutes(value: String): Int? {
-            val p = value.split(":")
-            return if (p.size >= 2) p[0].toIntOrNull()?.let { h -> p[1].toIntOrNull()?.let { m -> h * 60 + m } } else null
-        }
-        val start = toMinutes(shiftStart) ?: 0
-        val end = toMinutes(shiftEnd) ?: (24 * 60 - 1)
+        val window = shiftWindowMillis() ?: return emptyList()
+        val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).apply { isLenient = false }
         return loadHistory().filter { flight ->
-            val parts = flight.date.split(" ")
-            val datePart = parts.getOrNull(0) ?: ""
-            val timePart = parts.getOrNull(1) ?: ""
-            val t = toMinutes(timePart) ?: return@filter false
-            val inWindow = if (end >= start) t in start..end else (t >= start || t <= end)
-            datePart == shiftDate && inWindow
-        }.sortedBy { it.date }
+            val savedMillis = try {
+                formatter.parse(flight.date)?.time
+            } catch (_: Exception) {
+                null
+            } ?: return@filter false
+            savedMillis in window.first..window.second
+        }.sortedBy { flight ->
+            try { formatter.parse(flight.date)?.time ?: Long.MAX_VALUE } catch (_: Exception) { Long.MAX_VALUE }
+        }
     }
- 
+
     fun shareShiftReportAsPdf(flights: List<SavedFlight>) {
         if (flights.isEmpty()) {
             Toast.makeText(context, "No flights found for this shift", Toast.LENGTH_SHORT).show()
@@ -1430,14 +1485,16 @@ fun RampDutyApp() {
             val freighterTurnarounds = flights.count { it.taskType == "FREIGHTER_TURNAROUND" }
             val incomplete = flights.count { f -> getTime(f.timings, "Task Start", "Task Started").isNullOrBlank() || getTime(f.timings, "Task End").isNullOrBlank() }
             newPage("DAILY SHIFT REPORT")
-            canvas.drawRoundRect(RectF(margin, y, pageWidth - margin, y + 86f), 10f, 10f, Paint().apply { color = pale })
+            canvas.drawRoundRect(RectF(margin, y, pageWidth - margin, y + 102f), 10f, 10f, Paint().apply { color = pale })
             canvas.drawText("SHIFT OVERVIEW", margin + 12f, y + 19f, h)
-            canvas.drawText("Date: $shiftDate", margin + 12f, y + 39f, body)
-            canvas.drawText("Shift: $shiftStart - $shiftEnd", margin + 12f, y + 57f, body)
+            canvas.drawText("Start: $shiftStartDate $shiftStart", margin + 12f, y + 39f, body)
+            canvas.drawText("End: $shiftEndDate $shiftEnd", margin + 12f, y + 57f, body)
             canvas.drawText("Total Flights: ${flights.size}", 330f, y + 39f, h)
             canvas.drawText("A $arrivals • D $departures • T $turnarounds • F $freighters ($freighterArrivals/$freighterDepartures/$freighterTurnarounds)", 330f, y + 57f, body)
             canvas.drawText("Incomplete: $incomplete", 330f, y + 75f, Paint(body).apply { color = if (incomplete == 0) AndroidColor.rgb(0,120,60) else AndroidColor.RED })
-            y += 104f
+            val totalTaskSeconds = flights.mapNotNull { f -> secondsBetween(getTime(f.timings, "Task Start", "Task Started"), getTime(f.timings, "Task End")) }.sum()
+            canvas.drawText("Total Task Time: ${formatDuration(totalTaskSeconds)}", margin + 12f, y + 79f, body)
+            y += 120f
             canvas.drawText("FLIGHT SUMMARY", margin, y, h); y += 16f
             flights.forEachIndexed { index, f ->
                 ensure(42f)
@@ -1474,15 +1531,16 @@ fun RampDutyApp() {
             }
             pdf.finishPage(page)
             val dir = File(context.cacheDir, "shared_pdfs").apply { mkdirs() }
-            val safeDate = shiftDate.replace("/", "-")
-            val file = File(dir, "Daily_Shift_Report_${safeDate}_${shiftStart.replace(":", "")}-${shiftEnd.replace(":", "")}.pdf")
+            val safeStartDate = shiftStartDate.replace("/", "-")
+            val safeEndDate = shiftEndDate.replace("/", "-")
+            val file = File(dir, "Daily_Shift_Report_${safeStartDate}_${shiftStart.replace(":", "")}_to_${safeEndDate}_${shiftEnd.replace(":", "")}.pdf")
             FileOutputStream(file).use { pdf.writeTo(it) }
             pdf.close()
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Daily Shift Report - $shiftDate - $shiftStart to $shiftEnd")
+                putExtra(Intent.EXTRA_SUBJECT, "Daily Shift Report - $shiftStartDate $shiftStart to $shiftEndDate $shiftEnd")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(intent, "Share Daily Shift Report"))
@@ -2245,6 +2303,19 @@ fun RampDutyApp() {
  
                     AppPage.SHIFT_REPORT -> {
                         val shiftFlights = flightsForShift()
+                        val shiftWindowValid = shiftWindowMillis() != null
+                        val incompleteFlights = shiftFlights.filter { f ->
+                            getTime(f.timings, "Task Start", "Task Started").isNullOrBlank() ||
+                                getTime(f.timings, "Task End").isNullOrBlank()
+                        }
+                        val visibleShiftFlights = if (showIncompleteOnly) incompleteFlights else shiftFlights
+                        val totalTaskSeconds = shiftFlights.mapNotNull { f ->
+                            secondsBetween(
+                                getTime(f.timings, "Task Start", "Task Started"),
+                                getTime(f.timings, "Task End")
+                            )
+                        }.sum()
+
                         Scaffold(
                             topBar = { TopAppBar(title = { Text("Daily Shift Report") }) }
                         ) { padding ->
@@ -2255,43 +2326,122 @@ fun RampDutyApp() {
                             ) {
                                 item {
                                     Text("Select shift window", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
-                                    Text("Flights saved within this date and time are included automatically.")
+                                    Text("Flights saved between the selected start and end date/time are included automatically.")
                                 }
+
                                 item {
-                                    OutlinedTextField(value = shiftDate, onValueChange = { shiftDate = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Date (dd/MM/yyyy)") }, singleLine = true)
-                                }
-                                item {
+                                    Text("Shift Start", fontWeight = FontWeight.Bold, color = Navy)
+                                    Spacer(Modifier.height(6.dp))
                                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        OutlinedTextField(value = shiftStart, onValueChange = { shiftStart = it }, modifier = Modifier.weight(1f), label = { Text("Shift Start") }, singleLine = true)
-                                        OutlinedTextField(value = shiftEnd, onValueChange = { shiftEnd = it }, modifier = Modifier.weight(1f), label = { Text("Shift End") }, singleLine = true)
+                                        OutlinedButton(
+                                            onClick = { showShiftDatePicker(shiftStartDate) { shiftStartDate = it } },
+                                            modifier = Modifier.weight(1f).height(56.dp)
+                                        ) { Text(shiftStartDate) }
+                                        OutlinedButton(
+                                            onClick = { showShiftTimePicker(shiftStart) { shiftStart = it } },
+                                            modifier = Modifier.weight(1f).height(56.dp)
+                                        ) { Text(shiftStart) }
                                     }
                                 }
+
+                                item {
+                                    Text("Shift End", fontWeight = FontWeight.Bold, color = Navy)
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        OutlinedButton(
+                                            onClick = { showShiftDatePicker(shiftEndDate) { shiftEndDate = it } },
+                                            modifier = Modifier.weight(1f).height(56.dp)
+                                        ) { Text(shiftEndDate) }
+                                        OutlinedButton(
+                                            onClick = { showShiftTimePicker(shiftEnd) { shiftEnd = it } },
+                                            modifier = Modifier.weight(1f).height(56.dp)
+                                        ) { Text(shiftEnd) }
+                                    }
+                                }
+
+                                item {
+                                    Text("Quick Shift", fontWeight = FontWeight.Bold, color = Navy)
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                shiftEndDate = shiftStartDate
+                                                shiftStart = "05:00"
+                                                shiftEnd = "17:00"
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("DAY 05:00–17:00") }
+                                        OutlinedButton(
+                                            onClick = {
+                                                shiftEndDate = nextDate(shiftStartDate)
+                                                shiftStart = "17:00"
+                                                shiftEnd = "05:00"
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("NIGHT 17:00–05:00") }
+                                    }
+                                }
+
+                                if (!shiftWindowValid) {
+                                    item {
+                                        Text(
+                                            "End date/time must be the same as or later than the start date/time.",
+                                            color = Color(0xFFD31313),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
                                 item {
                                     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(16.dp)) {
                                             Text("Shift Summary", fontWeight = FontWeight.Bold, color = Navy)
                                             Spacer(Modifier.height(8.dp))
+                                            Text("Window: $shiftStartDate $shiftStart → $shiftEndDate $shiftEnd")
                                             Text("Total Flights: ${shiftFlights.size}")
                                             Text("Arrival: ${shiftFlights.count { it.taskType == "ARRIVAL" }}")
                                             Text("Departure: ${shiftFlights.count { it.taskType == "DEPARTURE" }}")
                                             Text("Turnaround: ${shiftFlights.count { it.taskType == "TURNAROUND" }}")
                                             Text("Freighter: ${shiftFlights.count { it.taskType.startsWith("FREIGHTER_") }} (A ${shiftFlights.count { it.taskType == "FREIGHTER_ARRIVAL" }} / D ${shiftFlights.count { it.taskType == "FREIGHTER_DEPARTURE" }} / T ${shiftFlights.count { it.taskType == "FREIGHTER_TURNAROUND" }})")
-                                            val incomplete = shiftFlights.count { f -> getTime(f.timings, "Task Start", "Task Started").isNullOrBlank() || getTime(f.timings, "Task End").isNullOrBlank() }
-                                            Text("Incomplete Tasks: $incomplete", color = if (incomplete == 0) Color(0xFF087A2F) else Color(0xFFD31313), fontWeight = FontWeight.Bold)
+                                            Text("Total Task Time: ${formatDuration(totalTaskSeconds)}", fontWeight = FontWeight.Bold, color = Navy)
+                                            Text("Incomplete Tasks: ${incompleteFlights.size}", color = if (incompleteFlights.isEmpty()) Color(0xFF087A2F) else Color(0xFFD31313), fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
-                                if (shiftFlights.isEmpty()) {
-                                    item { Text("No saved flights found for this shift.") }
+
+                                item {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Show incomplete tasks only")
+                                        Switch(
+                                            checked = showIncompleteOnly,
+                                            onCheckedChange = { showIncompleteOnly = it }
+                                        )
+                                    }
+                                }
+
+                                if (!shiftWindowValid) {
+                                    item { Text("Select a valid shift window to view flights.") }
+                                } else if (visibleShiftFlights.isEmpty()) {
+                                    item {
+                                        Text(
+                                            if (showIncompleteOnly) "No incomplete tasks found for this shift."
+                                            else "No saved flights found for this shift."
+                                        )
+                                    }
                                 } else {
-                                    items(shiftFlights, key = { "shift-${it.storageIndex}-${it.date}" }) { flight ->
+                                    items(visibleShiftFlights, key = { "shift-${it.storageIndex}-${it.date}" }) { flight ->
                                         HistoryFlightCard(flight = flight, onClick = { selectedFlight = flight; page = AppPage.HISTORY_DETAILS })
                                     }
                                 }
+
                                 item {
                                     Button(
                                         onClick = { shareShiftReportAsPdf(shiftFlights) },
-                                        enabled = shiftFlights.isNotEmpty(),
+                                        enabled = shiftWindowValid && shiftFlights.isNotEmpty(),
                                         modifier = Modifier.fillMaxWidth().height(54.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = Navy)
                                     ) { Text("GENERATE & SHARE SHIFT PDF") }
@@ -2299,7 +2449,7 @@ fun RampDutyApp() {
                             }
                         }
                     }
- 
+
                     AppPage.EDIT_SAVED_FLIGHT -> {
                         Scaffold(
                             topBar = {
