@@ -73,6 +73,8 @@ data class SavedFlight(
     val aircraft: String,
     val stand: String,
     val date: String,
+    val flightDate: String = "",
+    val departureDate: String = "",
     val notes: String,
     val taskType: String,
     val timings: Map<String, String>,
@@ -227,13 +229,15 @@ fun RampDutyApp() {
     var aircraft by remember { mutableStateOf("") }
     var stand by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    val todayText = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+    var flightDate by remember { mutableStateOf(todayText) }
+    var departureDate by remember { mutableStateOf(todayText) }
  
     val stamps = remember { mutableStateListOf<Stamp>() }
     val bagCounts = remember { mutableStateMapOf<String, String>() }
     val d15Entries = remember { mutableStateListOf<D15Entry>() }
     val offloadEntries = remember { mutableStateListOf<OffloadEntry>() }
  
-    val todayText = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
     var shiftStartDate by remember { mutableStateOf(todayText) }
     var shiftEndDate by remember { mutableStateOf(todayText) }
     var shiftStart by remember { mutableStateOf("05:00") }
@@ -368,6 +372,8 @@ fun RampDutyApp() {
         aircraft = ""
         stand = ""
         notes = ""
+        flightDate = todayText
+        departureDate = todayText
         stamps.clear()
         bagCounts.clear()
         d15Entries.clear()
@@ -401,6 +407,19 @@ fun RampDutyApp() {
     }
 
     fun showShiftDatePicker(currentValue: String, onSelected: (String) -> Unit) {
+        val calendar = parseShiftDate(currentValue) ?: Calendar.getInstance()
+        DatePickerDialog(
+            context,
+            { _, year, month, day ->
+                onSelected(String.format(Locale.getDefault(), "%02d/%02d/%04d", day, month + 1, year))
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    fun showFlightDatePicker(currentValue: String, onSelected: (String) -> Unit) {
         val calendar = parseShiftDate(currentValue) ?: Calendar.getInstance()
         DatePickerDialog(
             context,
@@ -578,6 +597,8 @@ fun RampDutyApp() {
                     aircraft = item.optString("aircraft"),
                     stand = item.optString("stand"),
                     date = item.optString("date"),
+                    flightDate = item.optString("flightDate", item.optString("date").take(10)),
+                    departureDate = item.optString("departureDate", item.optString("flightDate", item.optString("date").take(10))),
                     notes = item.optString("notes"),
                     taskType = taskType,
                     timings = timingsMap,
@@ -603,6 +624,8 @@ fun RampDutyApp() {
         aircraftType: String,
         standNumber: String,
         dateText: String,
+        flightDateText: String,
+        departureDateText: String,
         notesText: String,
         stampList: List<Stamp>,
         counts: Map<String, String>,
@@ -617,6 +640,8 @@ fun RampDutyApp() {
         obj.put("aircraft", aircraftType)
         obj.put("stand", standNumber)
         obj.put("date", dateText)
+        obj.put("flightDate", flightDateText)
+        obj.put("departureDate", departureDateText)
         obj.put("notes", notesText)
         obj.put("taskType", taskType)
  
@@ -674,6 +699,8 @@ fun RampDutyApp() {
             aircraftType = aircraft,
             standNumber = stand,
             dateText = dateText,
+            flightDateText = flightDate,
+            departureDateText = if (selectedTaskType == "TURNAROUND" || selectedTaskType == "FREIGHTER_TURNAROUND") departureDate else flightDate,
             notesText = notes,
             stampList = stamps,
             counts = bagCounts,
@@ -724,6 +751,8 @@ fun RampDutyApp() {
             aircraftType = aircraft,
             standNumber = stand,
             dateText = original.date,
+            flightDateText = flightDate,
+            departureDateText = if (selectedTaskType == "TURNAROUND" || selectedTaskType == "FREIGHTER_TURNAROUND") departureDate else flightDate,
             notesText = notes,
             stampList = stamps,
             counts = bagCounts,
@@ -749,6 +778,8 @@ fun RampDutyApp() {
             aircraft = aircraft,
             stand = stand,
             date = original.date,
+            flightDate = flightDate,
+            departureDate = if (selectedTaskType == "TURNAROUND" || selectedTaskType == "FREIGHTER_TURNAROUND") departureDate else flightDate,
             notes = notes,
             taskType = selectedTaskType,
             timings = stamps.associate { it.name to (it.time ?: "") },
@@ -1560,6 +1591,8 @@ fun RampDutyApp() {
         aircraft = flight.aircraft
         stand = flight.stand
         notes = flight.notes
+        flightDate = flight.flightDate.ifBlank { flight.date.take(10) }
+        departureDate = flight.departureDate.ifBlank { flightDate }
  
         stamps.clear()
         bagCounts.clear()
@@ -1838,6 +1871,8 @@ fun RampDutyApp() {
                             registration = registration,
                             aircraft = aircraft,
                             stand = stand,
+                            flightDate = flightDate,
+                            departureDate = departureDate,
                             onFlightNoChange = { flightNo = it },
                             onDepartureFlightNoChange = { departureFlightNo = it },
                             onStaChange = { sta = it },
@@ -1845,6 +1880,8 @@ fun RampDutyApp() {
                             onRegistrationChange = { registration = it },
                             onAircraftChange = { aircraft = it },
                             onStandChange = { stand = it },
+                            onFlightDateClick = { showFlightDatePicker(flightDate) { flightDate = it } },
+                            onDepartureDateClick = { showFlightDatePicker(departureDate) { departureDate = it } },
                             onTaskTypeChange = { selectedTaskType = it },
                             onBack = { goHome() },
                             onStart = {
@@ -2715,6 +2752,8 @@ fun FlightSetupScreen(
     registration: String,
     aircraft: String,
     stand: String,
+    flightDate: String,
+    departureDate: String,
     onFlightNoChange: (String) -> Unit,
     onDepartureFlightNoChange: (String) -> Unit,
     onStaChange: (String) -> Unit,
@@ -2722,6 +2761,8 @@ fun FlightSetupScreen(
     onRegistrationChange: (String) -> Unit,
     onAircraftChange: (String) -> Unit,
     onStandChange: (String) -> Unit,
+    onFlightDateClick: () -> Unit,
+    onDepartureDateClick: () -> Unit,
     onTaskTypeChange: (String) -> Unit,
     onBack: () -> Unit,
     onStart: () -> Unit
@@ -2734,8 +2775,10 @@ fun FlightSetupScreen(
         "FREIGHTER_TURNAROUND" -> departureFlightNo.isNotBlank() && sta.isNotBlank() && std.isNotBlank()
         else -> departureFlightNo.isNotBlank() && sta.isNotBlank() && std.isNotBlank()
     }
+    val dateReady = flightDate.isNotBlank() &&
+        if (taskType == "TURNAROUND" || taskType == "FREIGHTER_TURNAROUND") departureDate.isNotBlank() else true
     val allFieldsReady =
-        flightNo.isNotBlank() && scheduleReady &&
+        flightNo.isNotBlank() && scheduleReady && dateReady &&
             registration.isNotBlank() && aircraft.isNotBlank() && stand.isNotBlank()
  
     val themeColor = when (taskType) {
@@ -2972,7 +3015,6 @@ fun FlightSetupScreen(
             }
  
             item {
-                val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -2984,15 +3026,35 @@ fun FlightSetupScreen(
                         )
                     }
                     ElevatedCard(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).clickable { onFlightDateClick() },
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.elevatedCardColors(containerColor = Color.White)
                     ) {
                         Column(Modifier.padding(14.dp)) {
-                            Text("Date", fontWeight = FontWeight.Bold, color = Navy)
+                            Text(if (taskType == "TURNAROUND" || taskType == "FREIGHTER_TURNAROUND") "Arrival Date" else "Flight Date", fontWeight = FontWeight.Bold, color = Navy)
                             Spacer(Modifier.height(12.dp))
-                            Text(today, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(12.dp))
+                            Text(flightDate, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Tap to change", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        }
+                    }
+                }
+            }
+
+            if (taskType == "TURNAROUND" || taskType == "FREIGHTER_TURNAROUND") {
+                item {
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth().clickable { onDepartureDateClick() },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White)
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("Departure Date", fontWeight = FontWeight.Bold, color = Navy)
+                                Spacer(Modifier.height(6.dp))
+                                Text(departureDate, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text("Tap to change", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                         }
                     }
                 }
